@@ -2,3 +2,5 @@ editor/node_modules
 prompts.db
 .idea
 .DS_Store
+pics/g
+scripts/__pycache__
