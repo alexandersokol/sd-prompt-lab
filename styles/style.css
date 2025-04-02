@@ -1,0 +1,16 @@
+.cm-content .brace-color-0 {
+  color: #88ddff;
+}
+.cm-content .brace-color-1 {
+  color: #aaffaa;
+}
+.cm-content .brace-color-2 {
+  color: #ffcc88;
+}
+.cm-content .brace-error {
+  color: red;
+  font-weight: bold;
+}
+.cm-content .lora-highlight {
+  color: #00ccff;
+}

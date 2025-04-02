@@ -424,8 +424,13 @@ function setupTxt2ImgButton() {
 }
 
 onUiLoaded(() => {
+    const linkElementStyles = document.createElement('link');
+    linkElementStyles.rel = 'stylesheet';
+    linkElementStyles.href = `file=extensions/sd-prompt-lab/styles/style.css?v=${Date.now()}`;
+    document.head.appendChild(linkElementStyles);
+
     const script = document.createElement('script');
-    script.src = '/file/extensions/sd-prompt-lab/javascript/codemirror6.bundle.js';
+    script.src = `/file/extensions/sd-prompt-lab/javascript/codemirror6.bundle.js?v=${Date.now()}`;
     script.onload = () => {
         window.initCodeMirror6('#code-editor');
     };
