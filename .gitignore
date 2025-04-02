@@ -4,4 +4,6 @@ prompts.db
 .DS_Store
 pics/g
 **/__pycache__/
+**/**/__pycache__/
+**/**/**/__pycache__/
 

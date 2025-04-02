@@ -41,7 +41,7 @@ function renderTree() {
                     if (item.type === 'folder') {
                         const children = filterItems(item.children || []);
                         if (children.length > 0) {
-                            return {...item, children};
+                            return { ...item, children };
                         }
                     } else if (item.type === 'file') {
                         if (item.name.toLowerCase().includes(search)) {
@@ -56,6 +56,13 @@ function renderTree() {
     }
 
     container.innerHTML = `<ul style="list-style: none; padding-left: 0;">${filteredTree.map(createTreeItem).join('')}</ul>`;
+
+    // Auto-expand folders if search is active
+    if (search) {
+        container.querySelectorAll('details').forEach(detail => {
+            detail.open = true;
+        });
+    }
 
     container.querySelectorAll('.wildcard-file').forEach(el => {
         el.addEventListener('click', () => {
