@@ -1,108 +1,115 @@
-function setupWildcardsTab() {
-    function tryInit() {
-        const searchBlock = gradioApp().getElementById("sd-prompt-lab-wildcards-search-input");
-        const treeContainer = gradioApp().getElementById("sd-prompt-lab-wildcards-tree");
+let wildcardsTreeData = [];
 
-        if (!searchBlock || !treeContainer) {
-            setTimeout(tryInit, 200);
-            return;
-        }
-
-        let wildcardsTree = [];
-
-        async function loadTree() {
-            try {
-                const res = await fetch("/sd-prompt-lab/wildcards/tree");
-                const data = await res.json();
-                console.log(data);
-                console.log("data loaded")
-                wildcardsTree = data.tree || [];
-                renderTree();
-            } catch (e) {
-                treeContainer.innerHTML = `<div style="color:red;">Failed to load wildcards</div>`;
-            }
-        }
-
-        function renderTree() {
-            const query = searchBlock.querySelector('textarea')?.value.toLowerCase() || "";
-            const filteredTree = filterTree(wildcardsTree, query);
-
-            treeContainer.innerHTML = createTreeHTML(filteredTree);
-            bindTreeClicks();
-        }
-
-        function filterTree(tree, query) {
-            if (!query) return tree;
-
-            const filtered = [];
-            for (const node of tree) {
-                if (node.type === "file" && node.name.toLowerCase().includes(query)) {
-                    filtered.push(node);
-                } else if (node.type === "dir") {
-                    const children = filterTree(node.children, query);
-                    if (children.length > 0) {
-                        filtered.push({ ...node, children });
-                    }
-                }
-            }
-            return filtered;
-        }
-
-        function createTreeHTML(tree) {
-            let html = `<ul class="wildcards-tree">`;
-            for (const node of tree) {
-                if (node.type === "file") {
-                    html += `<li class="file" data-path="${node.path}">📄 ${node.name}</li>`;
-                } else if (node.type === "dir") {
-                    html += `<li class="dir">${node.name}${createTreeHTML(node.children)}</li>`;
-                }
-            }
-            html += `</ul>`;
-            return html;
-        }
-
-        function bindTreeClicks() {
-            treeContainer.querySelectorAll(".file").forEach(el => {
-                el.addEventListener("click", () => {
-                    const path = el.dataset.path;
-                    const event = new CustomEvent("wildcardFileSelected", { detail: { path } });
-                    window.dispatchEvent(event);
-                });
-            });
-        }
-
-        // Add CSS
-        const style = document.createElement('style');
-        style.innerHTML = `
-        .wildcards-tree {
-            list-style: none;
-            padding-left: 12px;
-            max-height: 500px;
-            overflow-y: auto;
-            color: #ccc;
-            font-size: 14px;
-        }
-        .wildcards-tree li {
-            margin: 4px 0;
-            cursor: pointer;
-        }
-        .wildcards-tree li.dir {
-            font-weight: bold;
-            color: #eee;
-        }
-        .wildcards-tree li.file:hover {
-            color: #5af;
-        }
-        `;
-        document.head.appendChild(style);
-
-        searchBlock.querySelector('textarea')?.addEventListener("input", () => renderTree());
-        loadTree();
-    }
-
-    tryInit();
+function getWildcardsSearchText() {
+    const searchInput = gradioApp().getElementById("sd-prompt-lab-wildcards-search-input");
+    return searchInput?.querySelector('textarea')?.value.trim().toLowerCase() || '';
 }
 
+function createTreeItem(item) {
+    if (item.type === 'folder') {
+        return `
+            <li>
+                <details open>
+                    <summary style="cursor: pointer; color: #aaa; margin: 4px 0;">📂 ${item.name}</summary>
+                    <ul style="list-style: none; padding-left: 12px;">
+                        ${(item.children || []).map(createTreeItem).join('')}
+                    </ul>
+                </details>
+            </li>
+        `;
+    } else if (item.type === 'file') {
+        return `
+            <li>
+                <div class="wildcard-file" data-path="${item.path}" style="cursor: pointer; color: #ddd; margin: 4px 0; ">📄 ${item.name}</div>
+            </li>
+        `;
+    }
+    return '';
+}
+
+function renderTree() {
+    const search = getWildcardsSearchText();
+    const container = gradioApp().getElementById("sd-prompt-lab-wildcards-tree");
+
+    if (!container) return;
+
+    let filteredTree = JSON.parse(JSON.stringify(wildcardsTreeData));
+
+    if (search) {
+        const filterItems = (items) => {
+            return items
+                .map(item => {
+                    if (item.type === 'folder') {
+                        const children = filterItems(item.children || []);
+                        if (children.length > 0) {
+                            return { ...item, children };
+                        }
+                    } else if (item.type === 'file') {
+                        if (item.name.toLowerCase().includes(search)) {
+                            return item;
+                        }
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+        };
+        filteredTree = filterItems(filteredTree);
+    }
+
+    container.innerHTML = `<ul style="list-style: none; padding-left: 0;">${filteredTree.map(createTreeItem).join('')}</ul>`;
+
+    container.querySelectorAll('.wildcard-file').forEach(el => {
+        el.addEventListener('click', () => {
+            const path = el.dataset.path;
+            loadWildcardFile(path);
+        });
+    });
+}
+
+async function loadWildcardTree() {
+    try {
+        const response = await fetch('/sd-prompt-lab/wildcards/tree');
+        if (!response.ok) throw new Error('Failed to load wildcards tree');
+        const data = await response.json();
+        wildcardsTreeData = data.tree;
+        renderTree();
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function loadWildcardFile(path) {
+    try {
+        const nameInput = gradioApp().getElementById("sd-prompt-lab-wildcards-selected-name");
+        const contentInput = gradioApp().getElementById("sd-prompt-lab-wildcards-content");
+
+        const response = await fetch(`/sd-prompt-lab/wildcards/content?path=${encodeURIComponent(path)}`);
+        if (!response.ok) throw new Error('Failed to load wildcard file');
+        const data = await response.json();
+
+        if (nameInput) {
+            nameInput.querySelector('textarea').value = `__${path.replace(/\.txt$/, '')}__`;
+        }
+        if (contentInput) {
+            contentInput.querySelector('textarea').value = data.content;
+        }
+
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function setupWildcardsTab() {
+    const searchInput = gradioApp().getElementById("sd-prompt-lab-wildcards-search-input");
+    if (searchInput) {
+        const textarea = searchInput.querySelector('textarea');
+        textarea?.addEventListener('input', () => {
+            renderTree();
+        });
+    }
+
+    loadWildcardTree();
+}
 
 onUiLoaded(() => {
     setupWildcardsTab();
