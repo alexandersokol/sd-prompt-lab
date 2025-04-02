@@ -3,4 +3,5 @@ prompts.db
 .idea
 .DS_Store
 pics/g
-*/__pycache__/
+**/__pycache__/
+

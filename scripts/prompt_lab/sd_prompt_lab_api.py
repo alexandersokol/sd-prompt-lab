@@ -85,7 +85,11 @@ def init_api(app: FastAPI):
 
             image_path = prompt.get("image_path")
             if not image_path or not os.path.isfile(image_path):
-                raise HTTPException(status_code=404, detail="Thumbnail not found")
+                no_image_path = os.path.join(env.script_dir, "no_image_placeholder.png")
+                if no_image_path and os.path.isfile(no_image_path):
+                    return FileResponse(no_image_path, media_type="image/png")
+                else:
+                    raise HTTPException(status_code=404, detail="Thumbnail not found")
 
             return FileResponse(image_path, media_type="image/png")
         except Exception as e:
