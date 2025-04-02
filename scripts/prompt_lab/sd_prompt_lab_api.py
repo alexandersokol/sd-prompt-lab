@@ -126,3 +126,12 @@ def init_api(app: FastAPI):
             return {"status": "ok", "prompt": prompt}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+
+    @app.post("/sd-prompt-lab/favorite/{prompt_id}")
+    async def toggle_favorite(prompt_id: int, is_favorite: bool):
+        try:
+            db.set_prompt_favorite(prompt_id, is_favorite)
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))

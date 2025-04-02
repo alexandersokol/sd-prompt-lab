@@ -4,10 +4,30 @@ import sqlite3
 import scripts.prompt_lab.sd_promt_lab_env as env
 
 
-def connect():
+def get_db_path():
     file_path = os.path.join(env.script_dir, 'prompts.db')
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    return sqlite3.connect(file_path)
+    return file_path
+
+
+def connect():
+    return sqlite3.connect(get_db_path())
+
+
+def migrate_add_favorite():
+    conn = sqlite3.connect(get_db_path())
+    c = conn.cursor()
+
+    # Check if column already exists
+    c.execute("PRAGMA table_info(prompts)")
+    columns = [col[1] for col in c.fetchall()]
+
+    if "is_favorite" not in columns:
+        c.execute("ALTER TABLE prompts ADD COLUMN is_favorite INTEGER DEFAULT 0")
+        print("Database migrated: 'is_favorite' column added")
+
+    conn.commit()
+    conn.close()
 
 
 def init_db():
@@ -20,7 +40,8 @@ def init_db():
                         name TEXT NOT NULL UNIQUE,
                         description TEXT,
                         image_path TEXT,
-                        prompt TEXT NOT NULL
+                        prompt TEXT NOT NULL,
+                        is_favorite INTEGER DEFAULT 0
                     )
                 """)
         # Create prompt words table
@@ -31,6 +52,7 @@ def init_db():
                     )
                 """)
         conn.commit()
+        migrate_add_favorite()
 
 
 def insert_prompt_words_list(words: list[str]):
@@ -83,7 +105,7 @@ def save_or_update_prompt(data: dict):
 def get_prompt_by_name(name: str):
     with connect() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, name, description, image_path, prompt FROM prompts WHERE name = ?", (name,))
+        c.execute("SELECT id, name, description, image_path, prompt, is_favorite FROM prompts WHERE name = ?", (name,))
         row = c.fetchone()
         if row:
             return {
@@ -91,7 +113,8 @@ def get_prompt_by_name(name: str):
                 "name": row[1],
                 "description": row[2],
                 "image_path": row[3],
-                "prompt": row[4]
+                "prompt": row[4],
+                "is_favorite": row[5]
             }
         return None
 
@@ -99,7 +122,7 @@ def get_prompt_by_name(name: str):
 def get_prompt_by_id(prompt_id: int):
     with connect() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, name, description, image_path, prompt FROM prompts WHERE id = ?", (prompt_id,))
+        c.execute("SELECT id, name, description, image_path, prompt, is_favorite FROM prompts WHERE id = ?", (prompt_id,))
         row = c.fetchone()
         if row:
             return {
@@ -107,7 +130,8 @@ def get_prompt_by_id(prompt_id: int):
                 "name": row[1],
                 "description": row[2],
                 "image_path": row[3],
-                "prompt": row[4]
+                "prompt": row[4],
+                "is_favorite": row[5]
             }
         return None
 
@@ -123,7 +147,11 @@ def delete_prompt_by_id(prompt_id: int):
 def get_all_prompts():
     with connect() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, name, description, image_path, prompt FROM prompts ORDER BY id DESC ")
+        c.execute("""
+            SELECT id, name, description, image_path, prompt, is_favorite 
+            FROM prompts 
+            ORDER BY is_favorite DESC, id DESC
+        """)
         rows = c.fetchall()
         return [
             {
@@ -131,7 +159,8 @@ def get_all_prompts():
                 "name": row[1],
                 "description": row[2],
                 "image_path": row[3],
-                "prompt": row[4]
+                "prompt": row[4],
+                "is_favorite": row[5]
             }
             for row in rows
         ]
@@ -153,3 +182,10 @@ def search_prompt_words(prefix: str = ""):
             """)
         rows = c.fetchall()
         return [row[0] for row in rows]
+
+
+def set_prompt_favorite(prompt_id: int, is_favorite: bool):
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE prompts SET is_favorite = ? WHERE id = ?", (int(is_favorite), prompt_id))
+        conn.commit()

@@ -126,6 +126,7 @@ function setupBrowseTab() {
 
             data.prompts.forEach(p => {
                 const thumbnail = p.image_path ? `/sd-prompt-lab/thumbnail/${p.id}` : '';
+                const favoriteIcon = p.is_favorite ? '❤️' : '🩶';
 
                 html += `
                     <div style="
@@ -205,6 +206,14 @@ function setupBrowseTab() {
                                 border-radius: 6px;
                                 cursor: pointer;
                             ">📋 copy</button>
+                            <button data-id="${p.id}" data-action="favorite" data-favorite="${p.is_favorite}" style="
+                                padding: 4px 10px;
+                                background: #333;
+                                color: #ddd;
+                                border: 1px solid #555;
+                                border-radius: 6px;
+                                cursor: pointer;
+                            ">${favoriteIcon}</button>
                         </div>
                     </div>
                 `;
@@ -229,7 +238,18 @@ function setupBrowseTab() {
             const action = btn.dataset.action;
             const promptText = btn.dataset.prompt || '';
 
-            if (action === 'remove') {
+            if (action === 'favorite') {
+                const isFavorite = btn.dataset.favorite === '1'; // because it's "0" or "1"
+                const newFavorite = !isFavorite;
+
+                fetch(`/sd-prompt-lab/favorite/${id}?is_favorite=${newFavorite}`, {method: 'POST'})
+                    .then((res) => res.json())
+                    .then(() => {
+                        btn.dataset.favorite = newFavorite ? '1' : '0';
+                        btn.innerText = newFavorite ? '❤️' : '🩶';
+                    })
+                    .catch(() => alert('Failed to update favorite'));
+            } else if (action === 'remove') {
                 if (confirm('Are you sure you want to delete this prompt?')) {
                     fetch(`/sd-prompt-lab/delete/${id}`, {method: 'DELETE'})
                         .then((res) => res.ok ? loadCards() : alert('Failed to delete prompt'))
