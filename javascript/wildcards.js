@@ -35,6 +35,8 @@ function renderTree() {
     let filteredTree = JSON.parse(JSON.stringify(wildcardsTreeData));
 
     if (search) {
+        const searchWords = search.split(/\s+/).filter(Boolean);
+
         const filterItems = (items) => {
             return items
                 .map(item => {
@@ -44,7 +46,9 @@ function renderTree() {
                             return { ...item, children };
                         }
                     } else if (item.type === 'file') {
-                        if (item.name.toLowerCase().includes(search)) {
+                        const lowerName = item.name.toLowerCase();
+                        const matches = searchWords.every(word => lowerName.includes(word));
+                        if (matches) {
                             return item;
                         }
                     }
@@ -57,7 +61,6 @@ function renderTree() {
 
     container.innerHTML = `<ul style="list-style: none; padding-left: 0;">${filteredTree.map(createTreeItem).join('')}</ul>`;
 
-    // Auto-expand folders if search is active
     if (search) {
         container.querySelectorAll('details').forEach(detail => {
             detail.open = true;
@@ -71,6 +74,7 @@ function renderTree() {
         });
     });
 }
+
 
 async function loadWildcardTree() {
     try {
