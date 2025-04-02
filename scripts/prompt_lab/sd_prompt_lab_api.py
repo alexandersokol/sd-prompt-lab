@@ -96,9 +96,9 @@ def init_api(app: FastAPI):
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/sd-prompt-lab/all")
-    async def get_all_prompts():
+    async def get_all_prompts(search: str = None):
         try:
-            prompts = db.get_all_prompts()
+            prompts = db.get_all_prompts(search)
             return {"prompts": prompts}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

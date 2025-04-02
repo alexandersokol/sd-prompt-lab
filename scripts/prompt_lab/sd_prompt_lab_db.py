@@ -144,14 +144,23 @@ def delete_prompt_by_id(prompt_id: int):
         conn.commit()
 
 
-def get_all_prompts():
+def get_all_prompts(search: str = None):
     with connect() as conn:
         c = conn.cursor()
-        c.execute("""
-            SELECT id, name, description, image_path, prompt, is_favorite 
-            FROM prompts 
-            ORDER BY is_favorite DESC, id DESC
-        """)
+        if search:
+            like = f"%{search}%"
+            c.execute("""
+                        SELECT id, name, description, image_path, prompt, is_favorite 
+                        FROM prompts 
+                        WHERE name LIKE ? OR prompt LIKE ?
+                        ORDER BY is_favorite DESC, id DESC
+                    """, (like, like))
+        else:
+            c.execute("""
+                        SELECT id, name, description, image_path, prompt, is_favorite 
+                        FROM prompts 
+                        ORDER BY is_favorite DESC, id DESC
+                    """)
         rows = c.fetchall()
         return [
             {

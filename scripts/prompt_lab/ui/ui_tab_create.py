@@ -11,6 +11,6 @@ def ui_tab_create():
             gr.Textbox(label='Description', elem_id='sd-prompt-lab-description-input')
             gr.Textbox(label='Image Path', elem_id='sd-prompt-lab-image-path-input')
             gr.Button('🗑 Clear', elem_id='sd-prompt-lab-clear-button')
-            gr.Button('🏞 txt2img', elem_id='sd-prompt-lab-txt2img-button')
+            gr.Button('🖼 txt2img', elem_id='sd-prompt-lab-txt2img-button')
             gr.Button('💾 Save', elem_id='sd-prompt-lab-save-button')
             gr.HTML('', elem_id='sd-prompt-lab-output-html')

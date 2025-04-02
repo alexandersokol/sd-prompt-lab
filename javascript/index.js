@@ -60,6 +60,11 @@ function showErrorMessage(content) {
     }
 }
 
+function getSearchInputText() {
+    const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
+    return searchInput.querySelector('textarea')?.value || '';
+}
+
 
 function fillCreateTabFields(prompt) {
     const nameInput = gradioApp().getElementById('sd-prompt-lab-name-input');
@@ -106,29 +111,30 @@ function switchToCreateTab() {
     if (createBtn) createBtn.click();
 }
 
-
-function setupBrowseTab() {
-    const refreshButton = gradioApp().getElementById('sd-prompt-lab-refresh-button');
+const loadCards = async () => {
+    const search = getSearchInputText();
     const cardsContainer = gradioApp().getElementById('sd-prompt-lab-cards-output');
 
-    const loadCards = async () => {
-        try {
-            const response = await fetch('/sd-prompt-lab/all');
-            if (!response.ok) throw new Error('Failed to load prompts');
-            const data = await response.json();
+    try {
+        const url = search
+            ? `/sd-prompt-lab/all?search=${encodeURIComponent(search)}`
+            : '/sd-prompt-lab/all';
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to load prompts');
+        const data = await response.json();
 
-            let html = `<div style="
+        let html = `<div style="
                 display: flex;
                 flex-wrap: wrap;
                 gap: 16px;
                 justify-content: space-between;
             ">`;
 
-            data.prompts.forEach(p => {
-                const thumbnail = p.image_path ? `/sd-prompt-lab/thumbnail/${p.id}` : '';
-                const favoriteIcon = p.is_favorite ? '❤️' : '🩶';
+        data.prompts.forEach(p => {
+            const thumbnail = p.image_path ? `/sd-prompt-lab/thumbnail/${p.id}` : '';
+            const favoriteIcon = p.is_favorite ? '❤️' : '🩶';
 
-                html += `
+            html += `
                     <div style="
                         width: 48%;
                         min-height: 250px;
@@ -181,7 +187,7 @@ function setupBrowseTab() {
                                 border: 1px solid #555;
                                 border-radius: 6px;
                                 cursor: pointer;
-                            ">🏞 txt2img</button>
+                            ">🖼 txt2img</button>
                             <button data-id="${p.id}" data-action="edit" data-prompt="${p.prompt}" style="
                                 padding: 4px 10px;
                                 background: #333;
@@ -217,18 +223,38 @@ function setupBrowseTab() {
                         </div>
                     </div>
                 `;
-            });
+        });
 
-            html += `</div>`;
-            cardsContainer.innerHTML = html;
+        html += `</div>`;
+        cardsContainer.innerHTML = html;
 
-        } catch (e) {
-            cardsContainer.innerHTML = `<div style="color: red;">${e.message}</div>`;
-        }
-    };
+    } catch (e) {
+        cardsContainer.innerHTML = `<div style="color: red;">${e.message}</div>`;
+    }
+};
 
-    if (refreshButton && cardsContainer) {
+function setupBrowseTab() {
+    const refreshButton = gradioApp().getElementById('sd-prompt-lab-refresh-button');
+    const cardsContainer = gradioApp().getElementById('sd-prompt-lab-cards-output');
+    const clearSearchButton = document.getElementById('sd-prompt-lab-clear-search-button');
+
+    const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
+    if (searchInput) {
+        const textarea = searchInput.querySelector('textarea');
+        textarea.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            loadCards(value);
+        });
+    }
+
+    if (refreshButton && cardsContainer && clearSearchButton) {
         refreshButton.addEventListener('click', loadCards);
+        clearSearchButton.addEventListener('click', () => {
+            const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
+            const searchTextArea = searchInput.querySelector('textarea')
+            if (searchTextArea) searchTextArea.value = '';
+            loadCards()
+        })
         loadCards(); // auto-load
 
         cardsContainer.addEventListener('click', (e) => {
