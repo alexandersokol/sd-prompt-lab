@@ -1,7 +1,6 @@
 import os
-import re
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -19,39 +18,6 @@ class PromptData(BaseModel):
     override: bool = False
 
 
-def parse_prompts(raw_prompt: str) -> list:
-    """Parses a prompt string, expands variations, ignores __wrapped__ prompts"""
-    prompts = []
-    parts = [p.strip() for p in raw_prompt.split(",") if p.strip()]
-
-    for part in parts:
-        # Ignore __wrapped__ parts
-        if re.match(r"^__.+__$", part):
-            continue
-
-        # Find variations
-        match = re.search(r"\{([^}]+)\}", part)
-        if match:
-            variations = match.group(1).split("|")
-            # Remove empty strings
-            variations = [v for v in variations if v.strip()]
-            if variations:
-                # Generate prompt for each variation
-                for var in variations:
-                    expanded = part.replace(match.group(0), var.strip())
-                    # Remove potential leftover empty strings
-                    if expanded.strip():
-                        prompts.append(expanded.strip())
-            else:
-                # If all empty, ignore
-                continue
-        else:
-            prompts.append(part.strip())
-
-    # Remove duplicates and exclude prompts containing '__'
-    return list(sorted({p for p in prompts if '__' not in p}))
-
-
 def init_api(app: FastAPI):
     @app.post("/sd-prompt-lab/save")
     async def save_prompt_endpoint(data: PromptData):
@@ -64,7 +30,7 @@ def init_api(app: FastAPI):
                     raise HTTPException(status_code=400, detail="Prompt already exists")
                 prompt_id = db.save_or_update_prompt(data.dict())
 
-            prompts_list = parse_prompts(data.prompt)
+            prompts_list = utils.parse_prompts(data.prompt)
             db.insert_prompt_words_list(prompts_list)
 
             if data.image_path:
@@ -120,7 +86,6 @@ def init_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-
     @app.get("/sd-prompt-lab/{prompt_id}")
     async def get_prompt(prompt_id: int):
         try:
@@ -131,11 +96,57 @@ def init_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-
     @app.post("/sd-prompt-lab/favorite/{prompt_id}")
     async def toggle_favorite(prompt_id: int, is_favorite: bool):
         try:
             db.set_prompt_favorite(prompt_id, is_favorite)
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/sd-prompt-lab/wildcards/tree")
+    async def get_wildcards_tree():
+        if not os.path.exists(utils.get_wildcards_dir()):
+            return {"tree": []}
+
+        tree = utils.list_txt_files(utils.get_wildcards_dir())
+        return {"tree": tree}
+
+    @app.get("/sd-prompt-lab/wildcards/content")
+    async def get_wildcard_content(path: str = Query(...)):
+        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
+        if not abs_path.startswith(utils.get_wildcards_dir()) or not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        try:
+            with open(abs_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return {"content": content}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/save")
+    async def save_wildcard_content(path: str = Query(...), content: str = Query(...)):
+        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
+        if not abs_path.startswith(utils.get_wildcards_dir()):
+            raise HTTPException(status_code=400, detail="Invalid path")
+        try:
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/create")
+    async def create_wildcard_file(path: str = Query(...)):
+        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
+        if not abs_path.startswith(utils.get_wildcards_dir()):
+            raise HTTPException(status_code=400, detail="Invalid path")
+        try:
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            if os.path.exists(abs_path):
+                raise HTTPException(status_code=400, detail="File already exists")
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write("")
             return {"status": "ok"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
