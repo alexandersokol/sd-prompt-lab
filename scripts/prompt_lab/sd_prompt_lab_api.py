@@ -18,6 +18,11 @@ class PromptData(BaseModel):
     override: bool = False
 
 
+class WildcardSaveRequest(BaseModel):
+    path: str
+    content: str
+
+
 def init_api(app: FastAPI):
     @app.post("/sd-prompt-lab/save")
     async def save_prompt_endpoint(data: PromptData):
@@ -125,19 +130,26 @@ def init_api(app: FastAPI):
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/sd-prompt-lab/wildcards/save")
-    async def save_wildcard_content(path: str = Query(...), content: str = Query(...)):
-        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
+    async def save_wildcard_content(data: WildcardSaveRequest):
+        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), data.path))
         if not abs_path.startswith(utils.get_wildcards_dir()):
             raise HTTPException(status_code=400, detail="Invalid path")
+        if not os.path.isfile(abs_path):
+            raise HTTPException(status_code=404, detail="File does not exist")
+
         try:
             with open(abs_path, "w", encoding="utf-8") as f:
-                f.write(content)
+                f.write(data.content)
             return {"status": "ok"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/sd-prompt-lab/wildcards/create")
     async def create_wildcard_file(path: str = Query(...)):
+
+        if not path.endswith(".txt"):
+            path += ".txt"
+
         abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
         if not abs_path.startswith(utils.get_wildcards_dir()):
             raise HTTPException(status_code=400, detail="Invalid path")
