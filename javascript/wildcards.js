@@ -216,8 +216,54 @@ function setupRemoveWildcardButton() {
     });
 }
 
+function setupFindDuplicatesButton() {
+    const removeDuplicatesButton = gradioApp().getElementById('sd-prompt-lab-wildcards-remove-duplicates-button');
+
+    if (removeDuplicatesButton) {
+        removeDuplicatesButton.addEventListener('click', () => {
+            if (confirm('Are you sure you want to remove duplicate wildcard files?')) {
+                fetch('/sd-prompt-lab/wildcards/remove-duplicates', {method: 'POST'})
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'ok') {
+                            alert(`Duplicates moved: ${data.moved.join(', ')}`);
+                            loadWildcardTree(); // Refresh tree
+                        } else {
+                            alert('Failed to remove duplicates');
+                        }
+                    })
+                    .catch(() => alert('Failed to remove duplicates'));
+            }
+        });
+    }
+}
+
+function setupCleanUpButton() {
+    const cleanupButton = gradioApp().getElementById('sd-prompt-lab-wildcards-clear-up-button');
+
+    if (cleanupButton) {
+        cleanupButton.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clean up the wildcards directory?')) {
+                fetch('/sd-prompt-lab/wildcards/cleanup', {method: 'POST'})
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'ok') {
+                            alert(`Cleanup done.\nRemoved files:\n${data.removed_files.join('\n')}\n\nRemoved directories:\n${data.removed_dirs.join('\n')}`);
+                            loadWildcardTree(); // Refresh tree
+                        } else {
+                            alert('Failed to clean up');
+                        }
+                    })
+                    .catch(() => alert('Failed to clean up'));
+            }
+        });
+    }
+}
+
 onUiLoaded(() => {
     setupWildcardsTab();
     setupSaveWildcard();
-    setupRemoveWildcardButton()
+    setupRemoveWildcardButton();
+    setupFindDuplicatesButton();
+    setupCleanUpButton();
 });

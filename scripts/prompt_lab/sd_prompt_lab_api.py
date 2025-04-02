@@ -1,4 +1,6 @@
+import hashlib
 import os
+import shutil
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -176,5 +178,79 @@ def init_api(app: FastAPI):
         try:
             os.remove(abs_path)
             return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/remove-duplicates")
+    async def remove_duplicate_wildcards():
+        try:
+            wildcards_dir = utils.get_wildcards_dir()
+            duplicates_dir = os.path.join(wildcards_dir, "duplicates")
+            os.makedirs(duplicates_dir, exist_ok=True)
+
+            # Step 1: Collect file hashes
+            file_hashes = {}
+            duplicates = []
+
+            for root, _, files in os.walk(wildcards_dir):
+                for file in files:
+                    if not file.endswith(".txt"):
+                        continue
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, wildcards_dir)
+
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
+
+                    if content_hash in file_hashes:
+                        duplicates.append((rel_path, file_path))
+                    else:
+                        file_hashes[content_hash] = rel_path
+
+            # Step 2: Move duplicates
+            for rel_path, full_path in duplicates:
+                dest_path = os.path.join(duplicates_dir, rel_path)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                shutil.move(full_path, dest_path)
+
+            return {"status": "ok", "moved": [rel for rel, _ in duplicates]}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/cleanup")
+    async def cleanup_wildcards():
+        try:
+            wildcards_dir = utils.get_wildcards_dir()
+            duplicates_dir = os.path.join(wildcards_dir, "duplicates")
+            removed_files = []
+            removed_dirs = []
+
+            # Step 1: Remove empty and non-txt files
+            for root, dirs, files in os.walk(wildcards_dir, topdown=False):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if not file.endswith(".txt") or os.path.getsize(file_path) == 0:
+                        os.remove(file_path)
+                        removed_files.append(os.path.relpath(file_path, wildcards_dir))
+
+            # Step 2: Remove empty directories
+            for root, dirs, files in os.walk(wildcards_dir, topdown=False):
+                for d in dirs:
+                    dir_path = os.path.join(root, d)
+                    if not any(os.scandir(dir_path)):
+                        os.rmdir(dir_path)
+                        removed_dirs.append(os.path.relpath(dir_path, wildcards_dir))
+
+            # Step 3: Remove duplicates directory
+            if os.path.exists(duplicates_dir):
+                shutil.rmtree(duplicates_dir)
+                removed_dirs.append("duplicates")
+
+            return {
+                "status": "ok",
+                "removed_files": removed_files,
+                "removed_dirs": removed_dirs
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

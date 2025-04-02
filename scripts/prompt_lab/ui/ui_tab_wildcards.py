@@ -51,3 +51,9 @@ def ui_tab_wildcards():
                 "",
                 elem_id="sd-prompt-lab-wildcards-output-html"
             )
+
+            gr.HTML()
+            gr.HTML()
+            with gr.Row():
+                gr.Button('Extract duplicated', elem_id="sd-prompt-lab-wildcards-remove-duplicates-button", )
+                gr.Button('Clear Up', elem_id="sd-prompt-lab-wildcards-clear-up-button", )
