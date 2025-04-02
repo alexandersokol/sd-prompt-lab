@@ -115,3 +115,14 @@ def init_api(app: FastAPI):
             return {"status": "ok", "id": prompt_id}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+
+    @app.get("/sd-prompt-lab/{prompt_id}")
+    async def get_prompt(prompt_id: int):
+        try:
+            prompt = db.get_prompt_by_id(prompt_id)
+            if not prompt:
+                raise HTTPException(status_code=404, detail="Prompt not found")
+            return {"status": "ok", "prompt": prompt}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))

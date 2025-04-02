@@ -61,6 +61,52 @@ function showErrorMessage(content) {
 }
 
 
+function fillCreateTabFields(prompt) {
+    const nameInput = gradioApp().getElementById('sd-prompt-lab-name-input');
+    const descInput = gradioApp().getElementById('sd-prompt-lab-description-input');
+    const imagePathInput = gradioApp().getElementById('sd-prompt-lab-image-path-input');
+    const overrideBlock = gradioApp().getElementById('sd-prompt-lab-override-checkbox');
+
+    // Find textarea inside Gradio block
+    const getTextArea = (block) => block ? block.querySelector('textarea') : null;
+
+    const nameArea = getTextArea(nameInput);
+    const descArea = getTextArea(descInput);
+    const imageArea = getTextArea(imagePathInput);
+
+    if (nameArea) nameArea.value = prompt.name || '';
+    if (descArea) descArea.value = prompt.description || '';
+    if (imageArea) imageArea.value = prompt.image_path || '';
+
+    // Update CodeMirror content
+    if (window.sdPromptLabEditor) {
+        window.sdPromptLabEditor.dispatch({
+            changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: prompt.prompt || ''}
+        });
+    }
+
+    // Set override checkbox
+    if (overrideBlock) {
+        const checkbox = overrideBlock.querySelector('input[type="checkbox"]');
+        if (checkbox) checkbox.checked = true;
+    }
+}
+
+
+function switchToCreateTab() {
+    const root = gradioApp().querySelector('#tab_sd_prompt_lab');
+    if (!root) return;
+
+    const tabNav = root.querySelector('.tab-nav');
+    if (!tabNav) return;
+
+    const createBtn = Array.from(tabNav.querySelectorAll('button')).find(btn =>
+        btn.textContent.trim().toLowerCase().startsWith('create')
+    );
+    if (createBtn) createBtn.click();
+}
+
+
 function setupBrowseTab() {
     const refreshButton = gradioApp().getElementById('sd-prompt-lab-refresh-button');
     const cardsContainer = gradioApp().getElementById('sd-prompt-lab-cards-output');
@@ -190,7 +236,17 @@ function setupBrowseTab() {
                         .catch(() => alert('Failed to delete prompt'));
                 }
             } else if (action === 'edit') {
-                alert(`Edit prompt:\n${promptText}`);
+                fetch(`/sd-prompt-lab/${id}`)
+                    .then((res) => res.json())
+                    .then((data) => {
+                        if (data.status === 'ok') {
+                            fillCreateTabFields(data.prompt);
+                            switchToCreateTab();
+                        } else {
+                            alert('Failed to load prompt data');
+                        }
+                    })
+                    .catch(() => alert('Failed to load prompt data'));
             } else if (action === 'txt2img') {
                 if (typeof updateTxt2ImgPositivePrompt === 'function') {
                     updateTxt2ImgPositivePrompt(promptText);
