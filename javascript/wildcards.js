@@ -10,7 +10,7 @@ function createTreeItem(item) {
         return `
             <li>
                 <details open>
-                    <summary style="cursor: pointer; color: #aaa; margin: 4px 0;">📂 ${item.name}</summary>
+                    <summary style="cursor: pointer; color: #aaa; margin: 4px 0; font-size: 15px;">📂 ${item.name}</summary>
                     <ul style="list-style: none; padding-left: 12px;">
                         ${(item.children || []).map(createTreeItem).join('')}
                     </ul>
@@ -20,7 +20,7 @@ function createTreeItem(item) {
     } else if (item.type === 'file') {
         return `
             <li>
-                <div class="wildcard-file" data-path="${item.path}" style="cursor: pointer; color: #ddd; margin: 4px 0; ">📄 ${item.name}</div>
+                <div class="wildcard-file" data-path="${item.path}" style="cursor: pointer; color: #ddd; margin: 4px 0; font-size: 15px;">📄 ${item.name}</div>
             </li>
         `;
     }
@@ -30,7 +30,6 @@ function createTreeItem(item) {
 function renderTree() {
     const search = getWildcardsSearchText();
     const container = gradioApp().getElementById("sd-prompt-lab-wildcards-tree");
-
     if (!container) return;
 
     let filteredTree = JSON.parse(JSON.stringify(wildcardsTreeData));
