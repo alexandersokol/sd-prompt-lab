@@ -23,6 +23,10 @@ class WildcardSaveRequest(BaseModel):
     content: str
 
 
+class WildcardFileData(BaseModel):
+    path: str
+
+
 def init_api(app: FastAPI):
     @app.post("/sd-prompt-lab/save")
     async def save_prompt_endpoint(data: PromptData):
@@ -159,6 +163,18 @@ def init_api(app: FastAPI):
                 raise HTTPException(status_code=400, detail="File already exists")
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write("")
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/delete")
+    async def delete_wildcard_file(data: WildcardFileData):
+        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), data.path))
+        if not abs_path.startswith(utils.get_wildcards_dir()) or not os.path.isfile(abs_path):
+            raise HTTPException(status_code=404, detail="File not found")
+
+        try:
+            os.remove(abs_path)
             return {"status": "ok"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

@@ -27,6 +27,9 @@ def ui_tab_wildcards():
                 ui_components.ToolButton(value='💾',
                                          elem_id="sd-prompt-lab-wildcards-save-button",
                                          tooltip="Save file changes")
+                ui_components.ToolButton(value='🗑',
+                                         elem_id="sd-prompt-lab-wildcards-remove-button",
+                                         tooltip="Remove file")
 
             gr.TextArea(
                 label="Wildcard Content",

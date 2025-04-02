@@ -182,7 +182,42 @@ function setupSaveWildcard() {
     });
 }
 
+
+function setupRemoveWildcardButton() {
+    const removeButton = gradioApp().getElementById("sd-prompt-lab-wildcards-remove-button");
+    const selectedName = gradioApp().getElementById("sd-prompt-lab-wildcards-selected-name");
+    const contentArea = gradioApp().getElementById("sd-prompt-lab-wildcards-content");
+
+    removeButton.addEventListener("click", () => {
+        const wildcardName = selectedName.querySelector('textarea')?.value || '';
+        if (!wildcardName) {
+            alert('No wildcard file selected');
+            return;
+        }
+
+        const relativePath = wildcardName.replaceAll('__', '').trim() + '.txt';
+
+        if (!confirm(`Are you sure you want to delete "${relativePath}"?`)) {
+            return;
+        }
+
+        fetch("/sd-prompt-lab/wildcards/delete", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({path: relativePath}),
+        })
+            .then(res => res.json())
+            .then(() => {
+                selectedName.querySelector('textarea').value = '';
+                contentArea.querySelector('textarea').value = '';
+                loadWildcardTree();
+            })
+            .catch(() => alert('Failed to delete wildcard file'));
+    });
+}
+
 onUiLoaded(() => {
     setupWildcardsTab();
     setupSaveWildcard();
+    setupRemoveWildcardButton()
 });
