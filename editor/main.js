@@ -41,7 +41,7 @@ import {classHighlighter, tags as defaultTags} from "@lezer/highlight";
 // number --
 // variableName
 // typeName
-// namespace
+// namespace --
 // className
 // macroName
 // propertyName
@@ -54,7 +54,8 @@ import {classHighlighter, tags as defaultTags} from "@lezer/highlight";
 
 const customTags = {
     loraEmbedding: defaultTags.comment,
-    predefinedPrompt: defaultTags.keyword,
+    commonPrompt: defaultTags.keyword,
+    unwantedPrompts: defaultTags.namespace,
     unmatched: defaultTags.invalid,
 
     brace1: defaultTags.macroName,
@@ -70,7 +71,8 @@ const customTags = {
     paren5: defaultTags.deleted,
 };
 
-const predefinedPrompts = ["score9_up", "score7", "masterpiece art"];
+let commonPrompts = [];
+let unwantedPrompts = [];
 
 // Define a simple tokenizer using StreamLanguage
 const customLanguage = StreamLanguage.define({
@@ -79,7 +81,6 @@ const customLanguage = StreamLanguage.define({
         parenDepth: 0
     }),
     token: (stream, state) => {
-        console.log(stream.string);
         // Skip spaces
         if (stream.eatSpace()) return null;
 
@@ -123,8 +124,11 @@ const customLanguage = StreamLanguage.define({
 
         if (stream.match(/[^,{}()|]+(?=,|$)/)) {
             const word = stream.current().trim();
-            if (predefinedPrompts.includes(word)) {
-                return "predefinedPrompt";
+            if (commonPrompts.includes(word)) {
+                return "commonPrompt";
+            }
+            if (unwantedPrompts.includes(word)) {
+                return "unwantedPrompt";
             }
         }
 
@@ -138,10 +142,64 @@ const customLanguage = StreamLanguage.define({
     },
 });
 
+function promptWordsAutocomplete(context) {
+    let word = context.matchBefore(/\w+/);
+
+    if (!word) return null;
+
+    const query = word.text;
+
+    // Only trigger if query is at least 3 letters and contains only letters
+    if (query.length < 3 || !/^[a-zA-Z]+$/.test(query)) return null;
+
+    return fetch(`/sd-prompt-lab/autocomplete?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(data => {
+            return {
+                from: word.from,
+                options: data.results.map(w => ({label: w, type: "keyword"})),
+                validFor: /^\w*$/
+            };
+        });
+}
+
+async function loadPredefinedPrompts() {
+    try {
+        const response = await fetch(`/file/extensions/sd-prompt-lab/common_prompts.txt?v=${Date.now()}`);
+        if (!response.ok) throw new Error("Failed to load prompts");
+
+        const text = await response.text();
+
+        // Split lines, trim, and filter empty ones
+        commonPrompts = text
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
+    } catch (err) {
+        console.error("Could not load common_prompts.txt:", err);
+    }
+
+    try {
+        const response = await fetch(`/file/extensions/sd-prompt-lab/unwanted_prompts.txt?v=${Date.now()}`);
+        if (!response.ok) throw new Error("Failed to load prompts");
+
+        const text = await response.text();
+
+        // Split lines, trim, and filter empty ones
+        commonPrompts = text
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
+    } catch (err) {
+        console.error("Could not load unwanted_prompts.txt:", err);
+    }
+}
 
 window.initCodeMirror6 = (selector) => {
     const textarea = document.querySelector(selector);
     if (!textarea) return;
+
+    loadPredefinedPrompts();
 
     textarea.style.display = "none";
 
@@ -162,7 +220,7 @@ window.initCodeMirror6 = (selector) => {
                 syntaxHighlighting(classHighlighter),
                 bracketMatching(),
                 closeBrackets(),
-                autocompletion(),
+                autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
                 rectangularSelection(),
                 crosshairCursor(),
                 highlightActiveLine(),

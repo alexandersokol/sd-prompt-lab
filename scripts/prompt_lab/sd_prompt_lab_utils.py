@@ -62,35 +62,38 @@ def get_wildcards_dir():
 
 
 def parse_prompts(raw_prompt: str) -> list:
-    """Parses a prompt string, expands variations, ignores __wrapped__ prompts"""
+    """Parses a prompt string, expands variations, and ignores __wrapped__ prompts and weights like :0.2"""
     prompts = []
-    parts = [p.strip() for p in raw_prompt.split(",") if p.strip()]
+
+    # Split by comma, newline, or pipe
+    parts = re.split(r'[,\n|]+', raw_prompt)
+    parts = [p.strip() for p in parts if p.strip()]
 
     for part in parts:
         # Ignore __wrapped__ parts
         if re.match(r"^__.+__$", part):
             continue
 
-        # Find variations
+        # Remove weight suffix like ":0.2"
+        part = re.sub(r":[0-9.]+$", "", part).strip()
+
+        # Skip empty after removing weight
+        if not part:
+            continue
+
+        # Find variations inside {...}
         match = re.search(r"\{([^}]+)\}", part)
         if match:
             variations = match.group(1).split("|")
-            # Remove empty strings
-            variations = [v for v in variations if v.strip()]
-            if variations:
-                # Generate prompt for each variation
-                for var in variations:
-                    expanded = part.replace(match.group(0), var.strip())
-                    # Remove potential leftover empty strings
-                    if expanded.strip():
-                        prompts.append(expanded.strip())
-            else:
-                # If all empty, ignore
-                continue
+            variations = [v.strip() for v in variations if v.strip()]
+            for var in variations:
+                expanded = part.replace(match.group(0), var)
+                if expanded.strip():
+                    prompts.append(expanded.strip())
         else:
-            prompts.append(part.strip())
+            prompts.append(part)
 
-    # Remove duplicates and exclude prompts containing '__'
+    # Remove duplicates and any that still contain '__'
     return list(sorted({p for p in prompts if '__' not in p}))
 
 

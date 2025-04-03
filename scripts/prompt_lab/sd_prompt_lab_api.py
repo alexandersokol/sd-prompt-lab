@@ -2,7 +2,7 @@ import hashlib
 import os
 import shutil
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,17 @@ class WildcardFileData(BaseModel):
 
 
 def init_api(app: FastAPI):
+    @app.get("/sd-prompt-lab/autocomplete")
+    async def autocomplete(request: Request):
+        q = request.query_params.get("q", "").strip()
+        if not q:
+            return {"results": []}
+        try:
+            words = db.search_prompt_words(q, limit=30)
+            return {"results": words}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/sd-prompt-lab/save")
     async def save_prompt_endpoint(data: PromptData):
         try:

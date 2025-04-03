@@ -1,83 +1,83 @@
 /* loraEmbedding: defaultTags.comment */
 .cm-content .tok-comment {
-    color: red;
+    color: lightpink;
     font-weight: bold;
 }
 
-/* predefinedPrompt: defaultTags.keyword */
+/* commonPrompt: defaultTags.keyword */
 .cm-content .tok-keyword {
-    color: forestgreen;
+    color: #82bc82;
+    font-weight: bold;
+}
+
+/* unwantedPrompts: defaultTags.namespace */
+.cm-content .tok-namespace {
+    color: #c65d5d;
     font-weight: bold;
 }
 
 /* unmatched: defaultTags.invalid */
 .cm-content .tok-invalid {
-    color: #da3ca6;
+    color: red;
     font-weight: bold;
 }
 
 /* brace1: defaultTags.macroName */
 .cm-content .tok-macroName {
-    color: gold;
+    color: #9AB6F2;
     font-weight: bold;
 }
 
 /* brace2: defaultTags.heading */
 .cm-content .tok-heading {
-    color: darkgoldenrod;
+    color: #5ED3B5;
     font-weight: bold;
 }
 
 /* brace3: defaultTags.operator */
 .cm-content .tok-operator {
-    color: orange;
+    color: #C69CFF;
     font-weight: bold;
 }
 
 /* brace4: defaultTags.strong */
 .cm-content .tok-strong {
-    color: darkorange;
+    color: #A1F2C3;
     font-weight: bold;
 }
 
 /* brace5: defaultTags.atom */
 .cm-content .tok-atom {
-    color: orangered;
+    color: #7FBFFF;
     font-weight: bold;
 }
 
 /* paren1: defaultTags.bool */
 .cm-content .tok-bool {
-    color: cornflowerblue;
+    color: #FFD700;
     font-weight: bold;
 }
 
 /* paren2: defaultTags.url */
 .cm-content .tok-url {
-    color: deepskyblue;
+    color: #FFA500;
     font-weight: bold;
 }
 
 /* paren3: defaultTags.labelName */
 .cm-content .tok-labelName {
-    color: royalblue;
+    color: #FF8C00;
     font-weight: bold;
 }
 
 /* paren4: defaultTags.inserted */
 .cm-content .tok-inserted {
-    color: slateblue;
+    color: #FF6347;
     font-weight: bold;
 }
 
 /* paren5: defaultTags.deleted */
 .cm-content .tok-deleted {
-    color: lightskyblue;
-    font-weight: bold;
-}
-
-/* numberWeight: defaultTags.number */
-.cm-content .tok-number {
-    color: lightskyblue;
+    color: #FF4500;
     font-weight: bold;
 }

@@ -122,7 +122,8 @@ def get_prompt_by_name(name: str):
 def get_prompt_by_id(prompt_id: int):
     with connect() as conn:
         c = conn.cursor()
-        c.execute("SELECT id, name, description, image_path, prompt, is_favorite FROM prompts WHERE id = ?", (prompt_id,))
+        c.execute("SELECT id, name, description, image_path, prompt, is_favorite FROM prompts WHERE id = ?",
+                  (prompt_id,))
         row = c.fetchone()
         if row:
             return {
@@ -175,26 +176,16 @@ def get_all_prompts(search: str = None):
         ]
 
 
-def search_prompt_words(prefix: str = ""):
-    with connect() as conn:
-        c = conn.cursor()
-        if prefix:
-            c.execute("""
-                SELECT DISTINCT word FROM prompt_words 
-                WHERE word LIKE ?
-                ORDER BY word ASC
-            """, (f"{prefix}%",))
-        else:
-            c.execute("""
-                SELECT DISTINCT word FROM prompt_words 
-                ORDER BY word ASC
-            """)
-        rows = c.fetchall()
-        return [row[0] for row in rows]
-
-
 def set_prompt_favorite(prompt_id: int, is_favorite: bool):
     with connect() as conn:
         c = conn.cursor()
         c.execute("UPDATE prompts SET is_favorite = ? WHERE id = ?", (int(is_favorite), prompt_id))
         conn.commit()
+
+
+def search_prompt_words(query: str, limit: int = 30):
+    with connect() as conn:
+        c = conn.cursor()
+        like_query = f"%{query}%"
+        c.execute("SELECT DISTINCT word FROM prompt_words WHERE word LIKE ? LIMIT ?", (like_query, limit))
+        return [row[0] for row in c.fetchall()]

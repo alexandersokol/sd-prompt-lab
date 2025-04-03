@@ -24192,7 +24192,7 @@
       paren5: tags.deleted,
   };
 
-  const predefinedPrompts = ["score9_up", "score7", "masterpiece art"];
+  let predefinedPrompts = [];
 
   // Define a simple tokenizer using StreamLanguage
   const customLanguage = StreamLanguage.define({
@@ -24201,7 +24201,6 @@
           parenDepth: 0
       }),
       token: (stream, state) => {
-          console.log(stream.string);
           // Skip spaces
           if (stream.eatSpace()) return null;
 
@@ -24260,10 +24259,56 @@
       },
   });
 
+  function promptWordsAutocomplete(context) {
+      let word = context.matchBefore(/\w+/);
+
+      console.log(word);
+      console.log("!word: " + !word);
+      console.log("!context.explicit: " + !context.explicit);
+      if (!word) return null;
+
+      const query = word.text;
+
+      console.log("query: " + query);
+      // Only trigger if query is at least 3 letters and contains only letters
+      if (query.length < 3 || !/^[a-zA-Z]+$/.test(query)) return null;
+
+      console.log("requesting: " + query);
+
+      return fetch(`/sd-prompt-lab/autocomplete?q=${encodeURIComponent(query)}`)
+          .then(res => res.json())
+          .then(data => {
+              console.log("data received: " + data);
+              return {
+                  from: word.from,
+                  options: data.results.map(w => ({label: w, type: "keyword"})),
+                  validFor: /^\w*$/
+              };
+          });
+  }
+
+  async function loadPredefinedPrompts() {
+      try {
+          const response = await fetch(`/file/extensions/sd-prompt-lab/common_prompts.txt?v=${Date.now()}`);
+          if (!response.ok) throw new Error("Failed to load prompts");
+
+          const text = await response.text();
+
+          // Split lines, trim, and filter empty ones
+          predefinedPrompts = text
+              .split(/\r?\n/)
+              .map(line => line.trim())
+              .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
+      } catch (err) {
+          console.error("Could not load common_prompts.txt:", err);
+      }
+  }
 
   window.initCodeMirror6 = (selector) => {
       const textarea = document.querySelector(selector);
       if (!textarea) return;
+
+      loadPredefinedPrompts();
 
       textarea.style.display = "none";
 
@@ -24284,7 +24329,7 @@
                   syntaxHighlighting(classHighlighter),
                   bracketMatching(),
                   closeBrackets(),
-                  autocompletion(),
+                  autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
                   rectangularSelection(),
                   crosshairCursor(),
                   highlightActiveLine(),
