@@ -3,7 +3,7 @@ import { build } from "esbuild";
 build({
   entryPoints: ["main.js"],
   bundle: true,
-  minify: true,
+  minify: false,
   outfile: "../javascript/codemirror6.bundle.js",
   format: "iife",
   globalName: "CodeMirrorBundle",

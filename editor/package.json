@@ -4,7 +4,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "build": "esbuild main.js --bundle --minify --outfile=../javascript/codemirror6.bundle.js --format=iife --global-name=CodeMirrorBundle"
+    "build": "esbuild esbuild.config.js"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",
