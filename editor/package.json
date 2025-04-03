@@ -4,7 +4,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "build": "esbuild esbuild.config.js"
+    "build": "rollup -c"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.6",
@@ -17,6 +17,8 @@
     "@lezer/highlight": "^1.0.0"
   },
   "devDependencies": {
-    "esbuild": "^0.20.0"
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "esbuild": "^0.20.0",
+    "rollup": "^4.39.0"
   }
 }

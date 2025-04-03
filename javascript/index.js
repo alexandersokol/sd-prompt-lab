@@ -430,7 +430,7 @@ onUiLoaded(() => {
     document.head.appendChild(linkElementStyles);
 
     const script = document.createElement('script');
-    script.src = `/file/extensions/sd-prompt-lab/javascript/codemirror6.bundle.js?v=${Date.now()}`;
+    script.src = `/file/extensions/sd-prompt-lab/javascript/lib/codemirror6.bundle.js?v=${Date.now()}`;
     script.onload = () => {
         window.initCodeMirror6('#code-editor');
     };
