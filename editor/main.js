@@ -1,86 +1,225 @@
 import {
-    EditorView, keymap, highlightSpecialChars, drawSelection,
-    highlightActiveLine, dropCursor, rectangularSelection,
-    crosshairCursor, lineNumbers, highlightActiveLineGutter
+    crosshairCursor,
+    drawSelection,
+    dropCursor,
+    EditorView,
+    highlightActiveLine,
+    highlightActiveLineGutter,
+    highlightSpecialChars,
+    keymap,
+    lineNumbers,
+    rectangularSelection
 } from "@codemirror/view";
 import {EditorState} from "@codemirror/state";
-import {oneDark} from "@codemirror/theme-one-dark";
+// import {oneDark} from "@codemirror/theme-one-dark";
+import {autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap} from "@codemirror/autocomplete";
 import {
-    autocompletion, completionKeymap, closeBrackets,
-    closeBracketsKeymap
-} from "@codemirror/autocomplete";
-import {
-    defaultHighlightStyle, syntaxHighlighting, indentOnInput, StreamLanguage, HighlightStyle,
-    bracketMatching, foldGutter, foldKeymap
+    bracketMatching,
+    foldGutter,
+    foldKeymap,
+    indentOnInput, syntaxHighlighting, HighlightStyle
 } from "@codemirror/language";
-import {
-    searchKeymap, highlightSelectionMatches
-} from "@codemirror/search";
-import {
-    defaultKeymap, history, historyKeymap
-} from "@codemirror/commands";
-import {Tag, tags as defaultTags, styleTags} from "@lezer/highlight";
+import {highlightSelectionMatches, searchKeymap} from "@codemirror/search";
+import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
+import {tags as t} from "@lezer/highlight"
 
-const customTags = {
-    level1Brace: Tag.define(),
-    level2Brace: Tag.define(),
-    level3Brace: Tag.define(),
-    parens: Tag.define(),
-    unmatched: Tag.define(),
-    loraEmbedding: Tag.define(),
-};
+// Using https://github.com/one-dark/vscode-one-dark-theme/ as reference for the colors
 
-// Define a simple tokenizer using StreamLanguage
-const customLanguage = StreamLanguage.define({
-    startState: () => ({braceDepth: 0}),
-    token: (stream, state) => {
-        if (stream.match(/<lora:[^>]+>/)) {
-            return "loraEmbedding";
-        }
-        if (stream.match("{")) {
-            state.braceDepth++;
-            if (state.braceDepth === 1) return "level1Brace";
-            if (state.braceDepth === 2) return "level2Brace";
-            if (state.braceDepth >= 3) return "level3Brace";
-        }
-        if (stream.match("}")) {
-            if (state.braceDepth === 0) return "unmatched";
-            if (state.braceDepth === 1) {
-                state.braceDepth--;
-                return "level1Brace";
-            }
-            if (state.braceDepth === 2) {
-                state.braceDepth--;
-                return "level2Brace";
-            }
-            if (state.braceDepth >= 3) {
-                state.braceDepth--;
-                return "level3Brace";
-            }
-        }
-        if (stream.match("(") || stream.match(")")) {
-            return "parens";
-        }
-        stream.next();
-        return null;
+const chalky = "#e5c07b",
+    coral = "#e06c75",
+    cyan = "#56b6c2",
+    invalid = "#ffffff",
+    ivory = "#abb2bf",
+    stone = "#7d8799", // Brightened compared to original to increase contrast
+    malibu = "#61afef",
+    sage = "#98c379",
+    whiskey = "#d19a66",
+    violet = "#c678dd",
+    darkBackground = "#1652a3",
+    highlightBackground = "#65dc24",
+    background = "#7539b1",
+    tooltipBackground = "#ffffff",
+    selection = "#65dc24",
+    cursor = "#528bff"
+
+/// The colors used in the theme, as CSS color strings.
+export const color = {
+    chalky,
+    coral,
+    cyan,
+    invalid,
+    ivory,
+    stone,
+    malibu,
+    sage,
+    whiskey,
+    violet,
+    darkBackground,
+    highlightBackground,
+    background,
+    tooltipBackground,
+    selection,
+    cursor
+}
+
+/// The editor theme styles for One Dark.
+export const promptDarkTheme = EditorView.theme({
+    "&": {
+        color: ivory,
+        backgroundColor: background
     },
-    tokenTable: customTags,
-    blankLine: (state) => {
-        state.braceDepth = 0;
+
+    ".cm-content": {
+        caretColor: cursor
     },
-});
 
-// Extension to apply highlighting styles
+    ".cm-cursor, .cm-dropCursor": {borderLeftColor: cursor},
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {backgroundColor: selection},
 
-// Define the highlighting styles for our custom tags
-const customHighlightStyle = HighlightStyle.define([
-    {tag: customTags.level1Brace, color: "#d5465c"}, // Light pink for level 1 braces
-    {tag: customTags.level2Brace, color: "#006d91"}, // Light blue for level 2 braces
-    {tag: customTags.level3Brace, color: "#009800"}, // Light green for level 3 braces
-    {tag: customTags.parens, color: "#FFD700"}, // Gold for parentheses
-    {tag: customTags.unmatched, color: "#FF0000", fontWeight: "bold"}, // Bold red for unmatched braces/parens
-    {tag: customTags.loraEmbedding, color: "#347395"}, // Light sky blue for LoRA embeddings
-]);
+    ".cm-panels": {backgroundColor: darkBackground, color: ivory},
+    ".cm-panels.cm-panels-top": {borderBottom: "2px solid black"},
+    ".cm-panels.cm-panels-bottom": {borderTop: "2px solid black"},
+
+    ".cm-searchMatch": {
+        backgroundColor: "#72a1ff59",
+        outline: "1px solid #457dff"
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "#6199ff2f"
+    },
+
+    ".cm-activeLine": {backgroundColor: "#6699ff0b"},
+    ".cm-selectionMatch": {backgroundColor: "#aafe661a"},
+
+    "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
+        backgroundColor: "#bad0f847"
+    },
+
+    ".cm-gutters": {
+        backgroundColor: background,
+        color: stone,
+        border: "none"
+    },
+
+    ".cm-activeLineGutter": {
+        backgroundColor: highlightBackground
+    },
+
+    ".cm-foldPlaceholder": {
+        backgroundColor: "transparent",
+        border: "none",
+        color: "#ddd"
+    },
+
+    ".cm-tooltip": {
+        border: "none",
+        backgroundColor: tooltipBackground
+    },
+    ".cm-tooltip .cm-tooltip-arrow:before": {
+        borderTopColor: "transparent",
+        borderBottomColor: "transparent"
+    },
+    ".cm-tooltip .cm-tooltip-arrow:after": {
+        borderTopColor: tooltipBackground,
+        borderBottomColor: tooltipBackground
+    },
+    ".cm-tooltip-autocomplete": {
+        "& > ul > li[aria-selected]": {
+            backgroundColor: highlightBackground,
+            color: ivory
+        }
+    },
+    ".cm-paren": {
+        backgroundColor: highlightBackground,
+        color: coral
+    }
+}, {dark: true})
+
+/// The highlighting style for code in the One Dark theme.
+export const oneDarkHighlightStyle = HighlightStyle.define([
+    {
+        tag: t.paren,
+        color: coral
+    },
+    {
+        tag: t.squareBracket,
+        color: coral
+    },
+    {
+        tag: t.brace,
+        color: coral
+    },
+    {
+        tag: t.angleBracket,
+        color: coral
+    },
+    {
+        tag: t.keyword,
+        color: violet
+    },
+    {
+        tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
+        color: coral
+    },
+    {
+        tag: [t.function(t.variableName), t.labelName],
+        color: malibu
+    },
+    {
+        tag: [t.color, t.constant(t.name), t.standard(t.name)],
+        color: whiskey
+    },
+    {
+        tag: [t.definition(t.name), t.separator],
+        color: ivory
+    },
+    {
+        tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace],
+        color: chalky
+    },
+    {
+        tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
+        color: cyan
+    },
+    {
+        tag: [t.meta, t.comment],
+        color: stone
+    },
+    {
+        tag: t.strong,
+        fontWeight: "bold"
+    },
+    {
+        tag: t.emphasis,
+        fontStyle: "italic"
+    },
+    {
+        tag: t.strikethrough,
+        textDecoration: "line-through"
+    },
+    {
+        tag: t.link,
+        color: stone,
+        textDecoration: "underline"
+    },
+    {
+        tag: t.heading,
+        fontWeight: "bold",
+        color: coral
+    },
+    {
+        tag: [t.atom, t.bool, t.special(t.variableName)],
+        color: whiskey
+    },
+    {
+        tag: [t.processingInstruction, t.string, t.inserted],
+        color: sage
+    },
+    {
+        tag: t.invalid,
+        color: invalid
+    },
+])
 
 
 window.initCodeMirror6 = (selector) => {
@@ -93,7 +232,8 @@ window.initCodeMirror6 = (selector) => {
         state: EditorState.create({
             doc: textarea.value,
             extensions: [
-                oneDark,
+                promptDarkTheme,
+                syntaxHighlighting(oneDarkHighlightStyle),
                 lineNumbers(),
                 foldGutter(),
                 highlightSpecialChars(),
@@ -102,8 +242,6 @@ window.initCodeMirror6 = (selector) => {
                 dropCursor(),
                 EditorState.allowMultipleSelections.of(true),
                 indentOnInput(),
-                customLanguage,
-                syntaxHighlighting(customHighlightStyle),
                 bracketMatching(),
                 closeBrackets(),
                 autocompletion(),
