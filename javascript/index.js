@@ -426,15 +426,17 @@ function setupTxt2ImgButton() {
 onUiLoaded(() => {
     const linkElementStyles = document.createElement('link');
     linkElementStyles.rel = 'stylesheet';
-    linkElementStyles.href = `file=extensions/sd-prompt-lab/styles/style.css?v=${Date.now()}`;
-    document.head.appendChild(linkElementStyles);
+    linkElementStyles.href = `file=extensions/sd-prompt-lab/editor/style.css?v=${Date.now()}`;
+    linkElementStyles.onload = () => {
 
-    const script = document.createElement('script');
-    script.src = `/file/extensions/sd-prompt-lab/javascript/lib/codemirror6.bundle.js?v=${Date.now()}`;
-    script.onload = () => {
-        window.initCodeMirror6('#code-editor');
-    };
-    document.head.appendChild(script);
+        const script = document.createElement('script');
+        script.src = `/file/extensions/sd-prompt-lab/javascript/lib/codemirror6.bundle.js?v=${Date.now()}`;
+        script.onload = () => {
+            window.initCodeMirror6('#code-editor');
+        };
+        document.head.appendChild(script);
+    }
+    document.head.appendChild(linkElementStyles);
 
     setupSaveButton()
     setupTxt2ImgButton()

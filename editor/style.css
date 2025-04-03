@@ -1,0 +1,83 @@
+/* loraEmbedding: defaultTags.comment */
+.cm-content .tok-comment {
+    color: red;
+    font-weight: bold;
+}
+
+/* predefinedPrompt: defaultTags.keyword */
+.cm-content .tok-keyword {
+    color: forestgreen;
+    font-weight: bold;
+}
+
+/* unmatched: defaultTags.invalid */
+.cm-content .tok-invalid {
+    color: #da3ca6;
+    font-weight: bold;
+}
+
+/* brace1: defaultTags.macroName */
+.cm-content .tok-macroName {
+    color: gold;
+    font-weight: bold;
+}
+
+/* brace2: defaultTags.heading */
+.cm-content .tok-heading {
+    color: darkgoldenrod;
+    font-weight: bold;
+}
+
+/* brace3: defaultTags.operator */
+.cm-content .tok-operator {
+    color: orange;
+    font-weight: bold;
+}
+
+/* brace4: defaultTags.strong */
+.cm-content .tok-strong {
+    color: darkorange;
+    font-weight: bold;
+}
+
+/* brace5: defaultTags.atom */
+.cm-content .tok-atom {
+    color: orangered;
+    font-weight: bold;
+}
+
+/* paren1: defaultTags.bool */
+.cm-content .tok-bool {
+    color: cornflowerblue;
+    font-weight: bold;
+}
+
+/* paren2: defaultTags.url */
+.cm-content .tok-url {
+    color: deepskyblue;
+    font-weight: bold;
+}
+
+/* paren3: defaultTags.labelName */
+.cm-content .tok-labelName {
+    color: royalblue;
+    font-weight: bold;
+}
+
+/* paren4: defaultTags.inserted */
+.cm-content .tok-inserted {
+    color: slateblue;
+    font-weight: bold;
+}
+
+/* paren5: defaultTags.deleted */
+.cm-content .tok-deleted {
+    color: lightskyblue;
+    font-weight: bold;
+}
+
+/* numberWeight: defaultTags.number */
+.cm-content .tok-number {
+    color: lightskyblue;
+    font-weight: bold;
+}
