@@ -24163,7 +24163,7 @@
   // number --
   // variableName
   // typeName
-  // namespace
+  // namespace --
   // className
   // macroName
   // propertyName
@@ -24176,7 +24176,8 @@
 
   const customTags = {
       loraEmbedding: tags.comment,
-      predefinedPrompt: tags.keyword,
+      commonPrompt: tags.keyword,
+      unwantedPrompts: tags.namespace,
       unmatched: tags.invalid,
 
       brace1: tags.macroName,
@@ -24192,7 +24193,8 @@
       paren5: tags.deleted,
   };
 
-  let predefinedPrompts = [];
+  let commonPrompts = [];
+  let unwantedPrompts = [];
 
   // Define a simple tokenizer using StreamLanguage
   const customLanguage = StreamLanguage.define({
@@ -24244,8 +24246,11 @@
 
           if (stream.match(/[^,{}()|]+(?=,|$)/)) {
               const word = stream.current().trim();
-              if (predefinedPrompts.includes(word)) {
-                  return "predefinedPrompt";
+              if (commonPrompts.includes(word)) {
+                  return "commonPrompt";
+              }
+              if (unwantedPrompts.includes(word)) {
+                  return "unwantedPrompt";
               }
           }
 
@@ -24262,23 +24267,16 @@
   function promptWordsAutocomplete(context) {
       let word = context.matchBefore(/\w+/);
 
-      console.log(word);
-      console.log("!word: " + !word);
-      console.log("!context.explicit: " + !context.explicit);
       if (!word) return null;
 
       const query = word.text;
 
-      console.log("query: " + query);
       // Only trigger if query is at least 3 letters and contains only letters
       if (query.length < 3 || !/^[a-zA-Z]+$/.test(query)) return null;
-
-      console.log("requesting: " + query);
 
       return fetch(`/sd-prompt-lab/autocomplete?q=${encodeURIComponent(query)}`)
           .then(res => res.json())
           .then(data => {
-              console.log("data received: " + data);
               return {
                   from: word.from,
                   options: data.results.map(w => ({label: w, type: "keyword"})),
@@ -24295,12 +24293,27 @@
           const text = await response.text();
 
           // Split lines, trim, and filter empty ones
-          predefinedPrompts = text
+          commonPrompts = text
               .split(/\r?\n/)
               .map(line => line.trim())
               .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
       } catch (err) {
           console.error("Could not load common_prompts.txt:", err);
+      }
+
+      try {
+          const response = await fetch(`/file/extensions/sd-prompt-lab/unwanted_prompts.txt?v=${Date.now()}`);
+          if (!response.ok) throw new Error("Failed to load prompts");
+
+          const text = await response.text();
+
+          // Split lines, trim, and filter empty ones
+          commonPrompts = text
+              .split(/\r?\n/)
+              .map(line => line.trim())
+              .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
+      } catch (err) {
+          console.error("Could not load unwanted_prompts.txt:", err);
       }
   }
 
@@ -24317,6 +24330,7 @@
               doc: textarea.value,
               extensions: [
                   oneDark,
+                  EditorView.lineWrapping,
                   lineNumbers(),
                   foldGutter(),
                   highlightSpecialChars(),
@@ -24347,6 +24361,9 @@
           }),
           parent: textarea.parentNode
       });
+
+      view.dom.style.height = "400px"; // 40 * 15px line height approx
+      view.dom.style.overflow = "auto"; // Optional: scroll inside view
 
       window.sdPromptLabEditor = view;
   };

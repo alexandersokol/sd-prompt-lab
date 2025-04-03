@@ -208,6 +208,7 @@ window.initCodeMirror6 = (selector) => {
             doc: textarea.value,
             extensions: [
                 oneDark,
+                EditorView.lineWrapping,
                 lineNumbers(),
                 foldGutter(),
                 highlightSpecialChars(),
@@ -238,6 +239,9 @@ window.initCodeMirror6 = (selector) => {
         }),
         parent: textarea.parentNode
     });
+
+    view.dom.style.height = "600px"; // 40 * 15px line height approx
+    view.dom.style.overflow = "auto"; // Optional: scroll inside view
 
     window.sdPromptLabEditor = view;
 };

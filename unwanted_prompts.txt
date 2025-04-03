@@ -1,1 +1,4 @@
 score_3
+score_2
+greyscale
+monochrome
