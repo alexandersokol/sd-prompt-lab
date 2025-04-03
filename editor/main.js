@@ -19,7 +19,7 @@ import {
 import {
     defaultKeymap, history, historyKeymap
 } from "@codemirror/commands";
-import {Tag, tags as defaultTags, styleTags} from "@codemirror/highlight";
+import {Tag, tags as defaultTags, styleTags} from "@lezer/highlight";
 
 const customTags = {
     level1Brace: Tag.define(),
@@ -74,12 +74,12 @@ const customLanguage = StreamLanguage.define({
 
 // Define the highlighting styles for our custom tags
 const customHighlightStyle = HighlightStyle.define([
-    {tag: customTags.level1Brace, color: "#FFB6C1"}, // Light pink for level 1 braces
-    {tag: customTags.level2Brace, color: "#ADD8E6"}, // Light blue for level 2 braces
-    {tag: customTags.level3Brace, color: "#90EE90"}, // Light green for level 3 braces
+    {tag: customTags.level1Brace, color: "#d5465c"}, // Light pink for level 1 braces
+    {tag: customTags.level2Brace, color: "#006d91"}, // Light blue for level 2 braces
+    {tag: customTags.level3Brace, color: "#009800"}, // Light green for level 3 braces
     {tag: customTags.parens, color: "#FFD700"}, // Gold for parentheses
     {tag: customTags.unmatched, color: "#FF0000", fontWeight: "bold"}, // Bold red for unmatched braces/parens
-    {tag: customTags.loraEmbedding, color: "#87CEFA"}, // Light sky blue for LoRA embeddings
+    {tag: customTags.loraEmbedding, color: "#347395"}, // Light sky blue for LoRA embeddings
 ]);
 
 
