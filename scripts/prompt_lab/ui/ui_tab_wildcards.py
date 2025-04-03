@@ -34,7 +34,7 @@ def ui_tab_wildcards():
             gr.TextArea(
                 label="Wildcard Content",
                 elem_id="sd-prompt-lab-wildcards-content",
-                lines=30,
+                lines=25,
                 max_lines=150,
                 interactive=True
             )

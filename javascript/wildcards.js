@@ -32,6 +32,10 @@ function renderTree() {
     const container = gradioApp().getElementById("sd-prompt-lab-wildcards-tree");
     if (!container) return;
 
+    container.style.height = '600px';           // or any height you prefer
+    container.style.overflowY = 'auto';         // vertical scroll
+    container.style.overflowX = 'hidden';       // hide horizontal scroll
+
     let filteredTree = JSON.parse(JSON.stringify(wildcardsTreeData));
 
     if (search) {
@@ -43,7 +47,7 @@ function renderTree() {
                     if (item.type === 'folder') {
                         const children = filterItems(item.children || []);
                         if (children.length > 0) {
-                            return { ...item, children };
+                            return {...item, children};
                         }
                     } else if (item.type === 'file') {
                         const lowerName = item.name.toLowerCase();
