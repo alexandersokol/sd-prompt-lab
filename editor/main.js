@@ -57,7 +57,6 @@ const customTags = {
     commonPrompt: defaultTags.keyword,
     unwantedPrompts: defaultTags.namespace,
     unmatched: defaultTags.invalid,
-    wildcard: defaultTags.className,
 
     brace1: defaultTags.macroName,
     brace2: defaultTags.heading,
@@ -94,10 +93,6 @@ const customLanguage = StreamLanguage.define({
                 stream.pos += match[0].length; // advance the stream
                 return "loraEmbedding";
             }
-        }
-
-        if (stream.match(/__[^_]+(?:_[^_]+)*__/)) {
-            return "wildcard";
         }
 
         if (stream.match("{")) {
@@ -191,7 +186,7 @@ async function loadPredefinedPrompts() {
         const text = await response.text();
 
         // Split lines, trim, and filter empty ones
-        commonPrompts = text
+        unwantedPrompts = text
             .split(/\r?\n/)
             .map(line => line.trim())
             .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments

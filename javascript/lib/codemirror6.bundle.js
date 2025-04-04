@@ -24218,7 +24218,12 @@
               }
           }
 
-          if (stream.match(/__[^_]+(?:_[^_]+)*__/)) {
+          if (stream.match(/__[^_\n]+__/, false)) {
+              // Consume until we reach __
+              while (!stream.match(/__[^_\n]+__/)) {
+                  stream.next();
+                  if (stream.eol()) return null; // fail-safe if malformed
+              }
               return "wildcard";
           }
 
@@ -24292,20 +24297,16 @@
 
   async function loadPredefinedPrompts() {
       try {
-          console.log("Loading common_prompts.txt");
           const response = await fetch(`/file/extensions/sd-prompt-lab/common_prompts.txt?v=${Date.now()}`);
-          console.log("Loaded common_prompts.txt: ", response.status, response.statusText);
           if (!response.ok) throw new Error("Failed to load prompts");
 
           const text = await response.text();
-          console.log("Loaded common_prompts.txt: ", text);
 
           // Split lines, trim, and filter empty ones
           commonPrompts = text
               .split(/\r?\n/)
               .map(line => line.trim())
               .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
-          console.log("Loaded commonPrompts: ", commonPrompts);
       } catch (err) {
           console.error("Could not load common_prompts.txt:", err);
       }
@@ -24317,7 +24318,7 @@
           const text = await response.text();
 
           // Split lines, trim, and filter empty ones
-          commonPrompts = text
+          unwantedPrompts = text
               .split(/\r?\n/)
               .map(line => line.trim())
               .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments

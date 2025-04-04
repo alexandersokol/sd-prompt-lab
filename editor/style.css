@@ -1,13 +1,11 @@
 /* loraEmbedding: defaultTags.comment */
 .cm-content .tok-comment {
     color: lightpink;
-    font-weight: bold;
 }
 
 /* commonPrompt: defaultTags.keyword */
 .cm-content .tok-keyword {
     color: #82bc82;
-    font-weight: bold;
 }
 
 /* unwantedPrompts: defaultTags.namespace */
@@ -20,11 +18,6 @@
 .cm-content .tok-invalid {
     color: red;
     font-weight: bold;
-}
-
-/* wildcard: defaultTags.className */
-.cm-content .tok-className {
-    color: #abdcfb;
 }
 
 
