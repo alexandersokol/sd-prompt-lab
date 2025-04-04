@@ -24179,7 +24179,6 @@
       commonPrompt: tags.keyword,
       unwantedPrompts: tags.namespace,
       unmatched: tags.invalid,
-      wildcard: tags.className,
 
       brace1: tags.macroName,
       brace2: tags.heading,
@@ -24216,15 +24215,6 @@
                   stream.pos += match[0].length; // advance the stream
                   return "loraEmbedding";
               }
-          }
-
-          if (stream.match(/__[^_\n]+__/, false)) {
-              // Consume until we reach __
-              while (!stream.match(/__[^_\n]+__/)) {
-                  stream.next();
-                  if (stream.eol()) return null; // fail-safe if malformed
-              }
-              return "wildcard";
           }
 
           if (stream.match("{")) {
