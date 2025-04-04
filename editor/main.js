@@ -43,7 +43,7 @@ import {classHighlighter, tags as defaultTags} from "@lezer/highlight";
 // typeName
 // namespace --
 // className
-// macroName
+// macroName --
 // propertyName
 // operator --
 // comment --
@@ -57,6 +57,7 @@ const customTags = {
     commonPrompt: defaultTags.keyword,
     unwantedPrompts: defaultTags.namespace,
     unmatched: defaultTags.invalid,
+    wildcard: defaultTags.className,
 
     brace1: defaultTags.macroName,
     brace2: defaultTags.heading,
@@ -93,6 +94,10 @@ const customLanguage = StreamLanguage.define({
                 stream.pos += match[0].length; // advance the stream
                 return "loraEmbedding";
             }
+        }
+
+        if (stream.match(/__[^_]+(?:_[^_]+)*__/)) {
+            return "wildcard";
         }
 
         if (stream.match("{")) {

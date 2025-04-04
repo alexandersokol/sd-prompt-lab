@@ -22,9 +22,16 @@
     font-weight: bold;
 }
 
+/* wildcard: defaultTags.className */
+.cm-content .tok-className {
+    color: lightskyblue;
+    font-weight: bold;
+}
+
+
 /* brace1: defaultTags.macroName */
 .cm-content .tok-macroName {
-    color: #9AB6F2;
+    color: #80d4ff;
     font-weight: bold;
 }
 
