@@ -2,7 +2,7 @@ editor/node_modules
 prompts.db
 .idea
 .DS_Store
-pics/g
+pics
 **/__pycache__/
 **/**/__pycache__/
 **/**/**/__pycache__/

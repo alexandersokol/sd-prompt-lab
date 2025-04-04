@@ -1,7 +1,9 @@
 import hashlib
+import mimetypes
 import os
 import shutil
 
+import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -55,8 +57,30 @@ def init_api(app: FastAPI):
             prompts_list = utils.parse_prompts(data.prompt)
             db.insert_prompt_words_list(prompts_list)
 
+            # Handle image
             if data.image_path:
-                thumbnail_path = utils.create_thumbnail(data.image_path, prompt_id)
+                image_path = data.image_path
+                is_remote = image_path.startswith("http://") or image_path.startswith("https://")
+
+                if is_remote:
+                    # Try to download the image
+                    try:
+                        response = requests.get(image_path, timeout=10)
+                        response.raise_for_status()
+                        ext = mimetypes.guess_extension(response.headers.get("Content-Type", "image/jpeg")) or ".jpg"
+
+                        temp_path = os.path.join(env.script_dir, "pics", f"tmp{ext}")
+                        with open(temp_path, "wb") as f:
+                            f.write(response.content)
+
+                        thumbnail_path = utils.create_thumbnail(temp_path, prompt_id)
+
+                        os.remove(temp_path)
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"Failed to download or process image: {str(e)}")
+                else:
+                    thumbnail_path = utils.create_thumbnail(image_path, prompt_id)
+
                 if thumbnail_path:
                     db.update_prompt_image_path(prompt_id, thumbnail_path)
 

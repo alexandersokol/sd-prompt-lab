@@ -171,7 +171,14 @@ const loadCards = async () => {
                                 font-size: 13px;
                                 white-space: pre-wrap;
                                 word-break: break-word;
+                                max-height: 200px;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                display: -webkit-box;
+                                -webkit-line-clamp: 12; /* approximate line limit for 200px */
+                                -webkit-box-orient: vertical;
                             ">${p.prompt}</div>
+
                         </div>
 
                         <!-- Buttons -->

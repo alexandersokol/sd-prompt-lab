@@ -24165,7 +24165,7 @@
   // typeName
   // namespace --
   // className
-  // macroName
+  // macroName --
   // propertyName
   // operator --
   // comment --
@@ -24179,6 +24179,7 @@
       commonPrompt: tags.keyword,
       unwantedPrompts: tags.namespace,
       unmatched: tags.invalid,
+      wildcard: tags.className,
 
       brace1: tags.macroName,
       brace2: tags.heading,
@@ -24215,6 +24216,10 @@
                   stream.pos += match[0].length; // advance the stream
                   return "loraEmbedding";
               }
+          }
+
+          if (stream.match(/__[^_]+(?:_[^_]+)*__/)) {
+              return "wildcard";
           }
 
           if (stream.match("{")) {
@@ -24287,16 +24292,20 @@
 
   async function loadPredefinedPrompts() {
       try {
+          console.log("Loading common_prompts.txt");
           const response = await fetch(`/file/extensions/sd-prompt-lab/common_prompts.txt?v=${Date.now()}`);
+          console.log("Loaded common_prompts.txt: ", response.status, response.statusText);
           if (!response.ok) throw new Error("Failed to load prompts");
 
           const text = await response.text();
+          console.log("Loaded common_prompts.txt: ", text);
 
           // Split lines, trim, and filter empty ones
           commonPrompts = text
               .split(/\r?\n/)
               .map(line => line.trim())
               .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
+          console.log("Loaded commonPrompts: ", commonPrompts);
       } catch (err) {
           console.error("Could not load common_prompts.txt:", err);
       }
