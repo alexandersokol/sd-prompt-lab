@@ -22,7 +22,7 @@ import {
     syntaxHighlighting
 } from "@codemirror/language";
 import {highlightSelectionMatches, searchKeymap} from "@codemirror/search";
-import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
+import {defaultKeymap, history, historyKeymap, indentWithTab} from "@codemirror/commands";
 import {classHighlighter, tags as defaultTags} from "@lezer/highlight";
 
 // link --
@@ -228,6 +228,7 @@ window.initCodeMirror6 = (selector) => {
                 highlightActiveLineGutter(),
                 highlightSelectionMatches(),
                 keymap.of([
+                    indentWithTab,
                     ...closeBracketsKeymap,
                     ...defaultKeymap,
                     ...searchKeymap,
