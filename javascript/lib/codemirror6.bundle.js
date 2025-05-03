@@ -7906,17 +7906,26 @@
           : textRange(node, 0, Math.max(node.nodeValue.length, 1)).getBoundingClientRect();
       return x - rect.left > 5;
   }
-  function blockAt(view, pos) {
+  function blockAt(view, pos, side) {
       let line = view.lineBlockAt(pos);
-      if (Array.isArray(line.type))
+      if (Array.isArray(line.type)) {
+          let best;
           for (let l of line.type) {
-              if (l.to > pos || l.to == pos && (l.to == line.to || l.type == BlockType.Text))
+              if (l.from > pos)
+                  break;
+              if (l.to < pos)
+                  continue;
+              if (l.from < pos && l.to > pos)
                   return l;
+              if (!best || (l.type == BlockType.Text && (best.type != l.type || (side < 0 ? l.from < pos : l.to > pos))))
+                  best = l;
           }
+          return best || line;
+      }
       return line;
   }
   function moveToLineBoundary(view, start, forward, includeWrap) {
-      let line = blockAt(view, start.head);
+      let line = blockAt(view, start.head, start.assoc || -1);
       let coords = !includeWrap || line.type != BlockType.Text || !(view.lineWrapping || line.widgetLineBreaks) ? null
           : view.coordsAtPos(start.assoc < 0 && start.head > line.from ? start.head - 1 : start.head);
       if (coords) {
@@ -9151,7 +9160,7 @@
           if (effect)
               effects.push(effect);
       }
-      return effects ? state.update({ effects, annotations: isFocusChange.of(true) }) : null;
+      return effects.length ? state.update({ effects, annotations: isFocusChange.of(true) }) : null;
   }
   function updateForFocusChange(view) {
       setTimeout(() => {
@@ -10186,7 +10195,7 @@
           }
           else {
               this.scrollAnchorPos = -1;
-              this.scrollAnchorHeight = this.heightMap.height;
+              this.scrollAnchorHeight = prevHeight;
           }
           let viewport = heightChanges.length ? this.mapViewport(this.viewport, update.changes) : this.viewport;
           if (scrollTarget && (scrollTarget.range.head < viewport.from || scrollTarget.range.head > viewport.to) ||
@@ -11682,14 +11691,14 @@
       [IME](https://en.wikipedia.org/wiki/Input_method), and at least
       one change has been made in the current composition.
       */
-      get composing() { return this.inputState.composing > 0; }
+      get composing() { return !!this.inputState && this.inputState.composing > 0; }
       /**
       Indicates whether the user is currently in composing state. Note
       that on some platforms, like Android, this will be the case a
       lot, since just putting the cursor on a word starts a
       composition there.
       */
-      get compositionStarted() { return this.inputState.composing >= 0; }
+      get compositionStarted() { return !!this.inputState && this.inputState.composing >= 0; }
       /**
       The document or shadow root that the view lives in.
       */
@@ -13116,7 +13125,7 @@
       let leftSide = contentRect.left +
           (lineStyle ? parseInt(lineStyle.paddingLeft) + Math.min(0, parseInt(lineStyle.textIndent)) : 0);
       let rightSide = contentRect.right - (lineStyle ? parseInt(lineStyle.paddingRight) : 0);
-      let startBlock = blockAt(view, from), endBlock = blockAt(view, to);
+      let startBlock = blockAt(view, from, 1), endBlock = blockAt(view, to, -1);
       let visualStart = startBlock.type == BlockType.Text ? startBlock : null;
       let visualEnd = endBlock.type == BlockType.Text ? endBlock : null;
       if (visualStart && (view.lineWrapping || startBlock.widgetLineBreaks))

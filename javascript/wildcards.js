@@ -143,6 +143,10 @@ function setupWildcardsTab() {
                 if (data.status === "ok") {
                     outputHtml.innerHTML = `<span style="color: green;">✅ Wildcard file created</span>`;
                     loadWildcardTree(); // Reload the tree view
+
+                    setTimeout(() => {
+                        loadWildcardFile(fileName + '.txt');  // Direct call, no need to simulate click
+                    }, 200); // enough for DOM update
                 } else {
                     outputHtml.innerHTML = `<span style="color: red;">❌ ${data.detail || "Failed to create file"}</span>`;
                 }

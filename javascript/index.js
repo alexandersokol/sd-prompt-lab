@@ -330,6 +330,44 @@ function setupBrowseTab() {
     }
 }
 
+function setupClearFieldsButton() {
+    const clearFieldsButton = document.getElementById('sd-prompt-lab-clear-button');
+    const nameBlock = document.getElementById('sd-prompt-lab-name-input');
+    const descriptionBlock = document.getElementById('sd-prompt-lab-description-input');
+    const imagePathBlock = document.getElementById('sd-prompt-lab-image-path-input');
+    const overrideBlock = document.getElementById('sd-prompt-lab-override-checkbox');
+
+    if (clearFieldsButton && nameBlock && descriptionBlock && imagePathBlock && overrideBlock) {
+        clearFieldsButton.addEventListener('click', async () => {
+            const setValue = (block) => {
+                const textarea = block.querySelector('textarea');
+                if (textarea) {
+                    textarea.value = '';
+                    textarea.dispatchEvent(new Event('input', {bubbles: true}));
+                }
+            };
+
+            setValue(nameBlock);
+            setValue(descriptionBlock);
+            setValue(imagePathBlock);
+
+            if (window.sdPromptLabEditor) {
+                window.sdPromptLabEditor.dispatch({
+                    changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: ''}
+                });
+            }
+
+            const checkbox = overrideBlock.querySelector('input[type="checkbox"]');
+            if (checkbox) {
+                checkbox.checked = false;
+                checkbox.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+
+            showInfoMessage('Fields cleared');
+        });
+    }
+}
+
 
 function setupSaveButton() {
     const saveButton = document.getElementById('sd-prompt-lab-save-button');
@@ -430,6 +468,126 @@ function setupTxt2ImgButton() {
     }
 }
 
+function cleanUpPrompt() {
+    let prompt = window.sdPromptLabEditor?.state.doc.toString().trim() || '';
+
+    const seen = new Set();
+
+    const parts = prompt
+        .split(',')
+        .map(p => p.trim())
+        .filter(p => {
+            const key = p.toLowerCase(); // use lowercase for comparison
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+    prompt = parts.join(', ');
+
+    if (window.sdPromptLabEditor) {
+        window.sdPromptLabEditor.dispatch({
+            changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: prompt}
+        });
+    }
+}
+
+function removeUnmatchedBrackets(str) {
+    const pairs = {'(': ')', '{': '}', '<': '>'};
+    const open = Object.keys(pairs);
+    const close = Object.values(pairs);
+    const stack = [];
+
+    const keep = new Array(str.length).fill(true);
+
+    for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+
+        if (open.includes(char)) {
+            stack.push({char, index: i});
+        } else if (close.includes(char)) {
+            const matchIndex = stack.findLastIndex(item => pairs[item.char] === char);
+            if (matchIndex !== -1) {
+                stack.splice(matchIndex, 1); // valid pair, leave them
+            } else {
+                keep[i] = false; // unmatched closing
+            }
+        }
+    }
+
+    // remove leftover unmatched openings
+    for (const item of stack) {
+        keep[item.index] = false;
+    }
+
+    return [...str].filter((_, i) => keep[i]).join('');
+}
+
+
+function reformatPrompt() {
+    let prompt = window.sdPromptLabEditor?.state.doc.toString().trim() || '';
+    prompt = prompt.replace(/BREAK/gi, '')  // remove all "BREAK"
+        .replace(/\s+/g, ' ')      // collapse all whitespace
+        .replace(/\s+,/g, ', ')    // remove space before comma, add one after
+        .replace(/,(?!\s)/g, ', ') // ensure space after comma
+        .split(',')                              // split by comma
+        .map(item => item.trim())                  // trim each part
+        .filter(item => item.length > 0)           // remove empty entries
+        .join(', ')                                       // join with clean commas
+        .trim();                                          // final trim
+
+    // Step 2: Extract LoRA tags
+    const loraRegex = /<lora:[^>]+?>/gi;
+    const loraMatches = [...prompt.matchAll(loraRegex)].map(m => m[0]);
+
+    // Step 3: Remove LoRA tags from main prompt
+    let cleanedPrompt = prompt.replace(loraRegex, '').replace(/\s+/g, ' ').trim();
+    cleanedPrompt = removeUnmatchedBrackets(cleanedPrompt);
+
+    // Step 4: Split, clean and filter empty entries
+    const promptParts = cleanedPrompt
+        .split(',')
+        .map(p => p.trim())
+        .filter(p => p.length > 0);
+
+    // Step 5: Join main prompt and LoRAs
+    const finalPrompt = promptParts.join(', ') + (loraMatches.length > 0 ? ',' : '');
+    const loraLine = loraMatches.join(', ');
+
+    const clearedPrompt = loraMatches.length > 0 ? `${finalPrompt}\n${loraLine}` : finalPrompt;
+
+    if (window.sdPromptLabEditor) {
+        window.sdPromptLabEditor.dispatch({
+            changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: clearedPrompt}
+        });
+    }
+}
+
+function onButtonClick(buttonId, onClick) {
+    const button = document.getElementById(buttonId);
+    if (button && typeof onClick === 'function') {
+        button.addEventListener('click', async () => {
+            await onClick();
+        });
+    }
+}
+
+function setupPromptCleanUpButton() {
+    onButtonClick('sd-prompt-lab-clean-up-button', async () => {
+        reformatPrompt();
+        cleanUpPrompt();
+        reformatPrompt();
+        showInfoMessage('Prompt cleaned up');
+    });
+}
+
+function setupPromptReformatButton() {
+    onButtonClick('sd-prompt-lab-reformat-button', async () => {
+        reformatPrompt()
+        showInfoMessage('Prompt reformatted');
+    });
+}
+
 onUiLoaded(() => {
     const linkElementStyles = document.createElement('link');
     linkElementStyles.rel = 'stylesheet';
@@ -447,5 +605,9 @@ onUiLoaded(() => {
 
     setupSaveButton()
     setupTxt2ImgButton()
+    setupClearFieldsButton()
     setupBrowseTab()
+
+    setupPromptCleanUpButton()
+    setupPromptReformatButton()
 });
