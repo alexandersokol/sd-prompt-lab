@@ -55,7 +55,37 @@ import {classHighlighter, tags as defaultTags} from "@lezer/highlight";
 const customTags = {
     loraEmbedding: defaultTags.comment,
     commonPrompt: defaultTags.keyword,
-    unwantedPrompts: defaultTags.namespace,
+    unwantedPrompt: defaultTags.namespace,
+    wildcardLink: defaultTags.url,
+    wildcardPipe: defaultTags.operator,
+    wildcardWeight: defaultTags.number,
+    wildcardPick: defaultTags.atom,
+    wildcardSeparator: defaultTags.string,
+    variableSet: defaultTags.definition(defaultTags.variableName),
+    variableUse: defaultTags.variableName,
+    unmatched: defaultTags.invalid,
+
+    brace1: defaultTags.macroName,
+    brace2: defaultTags.heading,
+    brace3: defaultTags.operator,
+    brace4: defaultTags.strong,
+    brace5: defaultTags.atom,
+
+    paren1: defaultTags.bool,
+    paren2: defaultTags.url,
+    paren3: defaultTags.labelName,
+    paren4: defaultTags.inserted,
+    paren5: defaultTags.deleted,
+};
+
+const wildcardTags = {
+    wildcardLink: defaultTags.url,
+    wildcardPipe: defaultTags.operator,
+    wildcardWeight: defaultTags.number,
+    wildcardPick: defaultTags.atom,
+    wildcardSeparator: defaultTags.string,
+    variableSet: defaultTags.definition(defaultTags.variableName),
+    variableUse: defaultTags.variableName,
     unmatched: defaultTags.invalid,
 
     brace1: defaultTags.macroName,
@@ -95,32 +125,8 @@ const customLanguage = StreamLanguage.define({
             }
         }
 
-        if (stream.match("{")) {
-            state.braceDepth++;
-            return `brace${state.braceDepth}`;
-        }
-        if (stream.match("}")) {
-            if (state.braceDepth === 0) return "unmatched";
-            const depth = state.braceDepth;
-            state.braceDepth--;
-            return `brace${depth}`;
-        }
-        if (stream.match("(")) {
-            state.parenDepth++;
-            return `paren${state.parenDepth}`;
-        }
-        if (stream.match(")")) {
-            if (state.parenDepth === 0) return "unmatched";
-            const depth = state.parenDepth;
-            state.parenDepth--;
-            return `paren${depth}`;
-        }
-
-        if (stream.match("|")) {
-            return state.braceDepth > 0
-                ? `brace${state.braceDepth}`
-                : `pipe`
-        }
+        const wildcardToken = tryWildcardToken(stream, state);
+        if (wildcardToken) return wildcardToken;
 
         if (stream.match(/[^,{}()|]+(?=,|$)/)) {
             const word = stream.current().trim();
@@ -136,6 +142,109 @@ const customLanguage = StreamLanguage.define({
         return null;
     },
     tokenTable: customTags,
+    blankLine: (state) => {
+        state.braceDepth = 0;
+        state.parenDepth = 0;
+    },
+});
+
+function consumeVariableToken(stream) {
+    const rest = stream.string.slice(stream.pos);
+    if (!rest.startsWith("${")) return null;
+
+    let innerBraceDepth = 0;
+    for (let i = 2; i < rest.length; i++) {
+        const ch = rest[i];
+        if (ch === "{") {
+            innerBraceDepth++;
+        } else if (ch === "}") {
+            if (innerBraceDepth > 0) {
+                innerBraceDepth--;
+            } else {
+                const token = rest.slice(0, i + 1);
+                stream.pos += token.length;
+                return token.includes("=") ? "variableSet" : "variableUse";
+            }
+        }
+    }
+
+    stream.pos = stream.string.length;
+    return "unmatched";
+}
+
+function tryWildcardToken(stream, state) {
+    const variableToken = consumeVariableToken(stream);
+    if (variableToken) return variableToken;
+
+    const rest = stream.string.slice(stream.pos);
+
+    if (stream.match(/^__[^_\n]+?__/)) {
+        return "wildcardLink";
+    }
+
+    const weightModifier = rest.match(/^\(:-?\d+(?:\.\d+)?\)/);
+    if (weightModifier) {
+        stream.pos += weightModifier[0].length;
+        return "wildcardWeight";
+    }
+
+    if (state.braceDepth > 0 && stream.match(/^-?\d+(?:\.\d+)?::/)) {
+        return "wildcardWeight";
+    }
+
+    if (state.braceDepth > 0 && stream.match(/^\d+\$\$/)) {
+        return "wildcardPick";
+    }
+
+    if (state.braceDepth > 0 && stream.match(/^[^|{}$]*\$\$/)) {
+        return "wildcardSeparator";
+    }
+
+    if (stream.match("{")) {
+        if (!stream.string.slice(stream.pos).includes("}")) return "unmatched";
+        state.braceDepth++;
+        return `brace${Math.min(state.braceDepth, 5)}`;
+    }
+    if (stream.match("}")) {
+        if (state.braceDepth === 0) return "unmatched";
+        const depth = state.braceDepth;
+        state.braceDepth--;
+        return `brace${Math.min(depth, 5)}`;
+    }
+    if (stream.match("(")) {
+        if (!stream.string.slice(stream.pos).includes(")")) return "unmatched";
+        state.parenDepth++;
+        return `paren${Math.min(state.parenDepth, 5)}`;
+    }
+    if (stream.match(")")) {
+        if (state.parenDepth === 0) return "unmatched";
+        const depth = state.parenDepth;
+        state.parenDepth--;
+        return `paren${Math.min(depth, 5)}`;
+    }
+
+    if (stream.match("|")) {
+        return "wildcardPipe";
+    }
+
+    return null;
+}
+
+const wildcardLanguage = StreamLanguage.define({
+    startState: () => ({
+        braceDepth: 0,
+        parenDepth: 0
+    }),
+    token: (stream, state) => {
+        if (stream.eatSpace()) return null;
+
+        const wildcardToken = tryWildcardToken(stream, state);
+        if (wildcardToken) return wildcardToken;
+
+        stream.next();
+        return null;
+    },
+    tokenTable: wildcardTags,
     blankLine: (state) => {
         state.braceDepth = 0;
         state.parenDepth = 0;
@@ -245,6 +354,65 @@ window.initCodeMirror6 = (selector) => {
     view.dom.style.overflow = "auto"; // Optional: scroll inside view
 
     window.sdPromptLabEditor = view;
+};
+
+window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange} = {}) => {
+    if (!parent) return null;
+
+    loadPredefinedPrompts();
+
+    const view = new EditorView({
+        state: EditorState.create({
+            doc,
+            extensions: [
+                oneDark,
+                EditorView.lineWrapping,
+                lineNumbers(),
+                foldGutter(),
+                highlightSpecialChars(),
+                history(),
+                drawSelection(),
+                dropCursor(),
+                EditorState.allowMultipleSelections.of(true),
+                indentOnInput(),
+                wildcardLanguage,
+                syntaxHighlighting(classHighlighter),
+                bracketMatching(),
+                closeBrackets(),
+                autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
+                rectangularSelection(),
+                crosshairCursor(),
+                highlightActiveLine(),
+                highlightActiveLineGutter(),
+                highlightSelectionMatches(),
+                EditorView.updateListener.of((update) => {
+                    if (update.docChanged && typeof onChange === "function") {
+                        onChange(update.state.doc.toString());
+                    }
+                }),
+                keymap.of([
+                    indentWithTab,
+                    ...closeBracketsKeymap,
+                    ...defaultKeymap,
+                    ...searchKeymap,
+                    ...historyKeymap,
+                    ...foldKeymap,
+                    ...completionKeymap
+                ])
+            ]
+        }),
+        parent
+    });
+
+    view.dom.classList.add("sd-prompt-lab-wildcard-codemirror");
+    return view;
+};
+
+window.setSdPromptLabEditorDocument = (view, doc = "") => {
+    if (!view) return;
+    view.dispatch({
+        changes: {from: 0, to: view.state.doc.length, insert: doc}
+    });
 };
 
 // npm install

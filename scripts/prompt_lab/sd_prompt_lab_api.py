@@ -31,6 +31,56 @@ class WildcardFileData(BaseModel):
     path: str
 
 
+class WildcardRenameRequest(BaseModel):
+    old_path: str
+    new_path: str
+
+
+class WildcardDeleteRequest(BaseModel):
+    path: str
+
+
+def _wildcards_root():
+    return os.path.abspath(utils.get_wildcards_dir())
+
+
+def _resolve_wildcard_path(path: str, allow_root: bool = False):
+    root = _wildcards_root()
+    candidate = os.path.abspath(os.path.join(root, path or ""))
+    if os.path.commonpath([root, candidate]) != root:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not allow_root and candidate == root:
+        raise HTTPException(status_code=400, detail="Root directory cannot be modified")
+    return candidate
+
+
+def _build_wildcards_editor_tree(directory, base=""):
+    result = []
+    if not os.path.isdir(directory):
+        return result
+
+    entries = sorted(os.scandir(directory), key=lambda e: (not e.is_dir(), e.name.lower()))
+    for entry in entries:
+        path = os.path.join(base, entry.name)
+        if entry.is_dir():
+            result.append({
+                "name": entry.name,
+                "path": path,
+                "type": "folder",
+                "children": _build_wildcards_editor_tree(entry.path, path)
+            })
+        elif entry.is_file() and entry.name.endswith(".txt"):
+            stat = entry.stat()
+            result.append({
+                "name": entry.name,
+                "path": path,
+                "type": "file",
+                "size": stat.st_size,
+                "modified": stat.st_mtime
+            })
+    return result
+
+
 def init_api(app: FastAPI):
     @app.get("/sd-prompt-lab/autocomplete")
     async def autocomplete(request: Request):
@@ -158,6 +208,14 @@ def init_api(app: FastAPI):
         tree = utils.list_txt_files(utils.get_wildcards_dir())
         return {"tree": tree}
 
+    @app.get("/sd-prompt-lab/wildcards/editor/tree")
+    async def get_wildcards_editor_tree():
+        root = _wildcards_root()
+        if not os.path.exists(root):
+            return {"tree": []}
+
+        return {"tree": _build_wildcards_editor_tree(root)}
+
     @app.get("/sd-prompt-lab/wildcards/content")
     async def get_wildcard_content(path: str = Query(...)):
         abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
@@ -200,6 +258,67 @@ def init_api(app: FastAPI):
                 raise HTTPException(status_code=400, detail="File already exists")
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write("")
+            return {"status": "ok"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/editor/file/create")
+    async def create_wildcard_editor_file(path: str = Query(...)):
+        if not path.endswith(".txt"):
+            path += ".txt"
+
+        abs_path = _resolve_wildcard_path(path)
+        if os.path.exists(abs_path):
+            raise HTTPException(status_code=400, detail="File already exists")
+
+        try:
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write("")
+            return {"status": "ok", "path": os.path.relpath(abs_path, _wildcards_root())}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/editor/folder/create")
+    async def create_wildcard_folder(path: str = Query(...)):
+        abs_path = _resolve_wildcard_path(path)
+        if os.path.exists(abs_path):
+            raise HTTPException(status_code=400, detail="Folder already exists")
+
+        try:
+            os.makedirs(abs_path, exist_ok=False)
+            return {"status": "ok", "path": os.path.relpath(abs_path, _wildcards_root())}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/editor/rename")
+    async def rename_wildcard_entry(data: WildcardRenameRequest):
+        old_path = _resolve_wildcard_path(data.old_path)
+        new_path = _resolve_wildcard_path(data.new_path)
+
+        if not os.path.exists(old_path):
+            raise HTTPException(status_code=404, detail="Source path does not exist")
+        if os.path.exists(new_path):
+            raise HTTPException(status_code=400, detail="Destination path already exists")
+
+        try:
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+            shutil.move(old_path, new_path)
+            return {"status": "ok", "path": os.path.relpath(new_path, _wildcards_root())}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/wildcards/editor/delete")
+    async def delete_wildcard_entry(data: WildcardDeleteRequest):
+        abs_path = _resolve_wildcard_path(data.path)
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail="Path does not exist")
+
+        try:
+            if os.path.isdir(abs_path):
+                shutil.rmtree(abs_path)
+            else:
+                os.remove(abs_path)
             return {"status": "ok"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
