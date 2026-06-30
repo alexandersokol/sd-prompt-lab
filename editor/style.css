@@ -144,10 +144,12 @@
 }
 
 .spl-ide {
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
     height: min(78vh, 880px);
     min-height: 580px;
+    max-height: min(78vh, 880px);
     border: 1px solid var(--spl-line-strong);
     border-radius: 8px;
     background: var(--spl-bg);
@@ -198,6 +200,9 @@
 
 .spl-ide-sidebar {
     min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
     background: linear-gradient(180deg, #101723 0%, #0d141f 100%);
     border-right: 1px solid var(--spl-line);
     display: flex;
@@ -277,15 +282,19 @@
 }
 
 .spl-ide-tree {
-    overflow: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 0 6px 14px;
-    flex: 1;
+    flex: 1 1 0;
 }
 
-.spl-tree-list ul {
+.spl-tree-list ul,
+.spl-tree-children {
     list-style: none;
-    padding-left: 0;
-    margin: 0;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 .spl-tree-folder {
@@ -293,12 +302,13 @@
 }
 
 .spl-tree-row {
+    box-sizing: border-box;
     width: 100%;
     height: 34px;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 0 8px 0 calc(8px + (var(--spl-tree-depth, 0) * 12px));
+    padding: 0 8px 0 var(--spl-tree-indent, 0px) !important;
     color: var(--spl-text);
     cursor: pointer;
     user-select: none;
@@ -369,6 +379,7 @@
 .spl-ide-main {
     min-width: 0;
     min-height: 0;
+    height: 100%;
     display: grid;
     grid-template-rows: 42px 40px minmax(0, 1fr) 30px;
     background: var(--spl-editor);
@@ -405,10 +416,11 @@
 }
 
 .spl-ide-autosave {
+    position: relative;
     height: 30px;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     color: var(--spl-muted);
     font-size: 12px;
     white-space: nowrap;
@@ -416,12 +428,51 @@
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.035);
     border: 1px solid var(--spl-line);
+    cursor: pointer;
 }
 
 .spl-ide-autosave input {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--spl-accent);
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.spl-autosave-switch {
+    width: 30px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border-radius: 999px;
+    background: #334155;
+    border: 1px solid var(--spl-line-strong);
+    transition: background 140ms ease, border-color 140ms ease;
+}
+
+.spl-autosave-knob {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #aeb9c8;
+    transform: translateX(0);
+    transition: transform 140ms ease, background 140ms ease;
+}
+
+.spl-ide-autosave input:checked + .spl-autosave-switch {
+    background: rgba(99, 168, 255, 0.34);
+    border-color: rgba(99, 168, 255, 0.72);
+}
+
+.spl-ide-autosave input:checked + .spl-autosave-switch .spl-autosave-knob {
+    background: #eaf4ff;
+    transform: translateX(14px);
+}
+
+.spl-ide-autosave:focus-within {
+    border-color: var(--spl-accent);
+    box-shadow: 0 0 0 3px rgba(99, 168, 255, 0.12);
 }
 
 .spl-ide-tabs {
@@ -491,7 +542,6 @@
 .spl-ide-editor-host {
     min-width: 0;
     min-height: 0;
-    height: 100%;
     overflow: hidden;
     position: relative;
     background: var(--spl-editor);
@@ -507,13 +557,20 @@
 }
 
 .sd-prompt-lab-wildcard-codemirror {
-    height: 100%;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100% !important;
     min-height: 0;
+    max-height: 100%;
+    overflow: auto !important;
 }
 
 .sd-prompt-lab-wildcard-codemirror.cm-editor {
-    height: 100%;
+    height: 100% !important;
     min-height: 0;
+    max-height: 100%;
+    overflow: auto !important;
     background: #1F2937 !important;
     color: var(--spl-text);
 }
@@ -521,8 +578,10 @@
 .sd-prompt-lab-wildcard-codemirror .cm-scroller {
     height: 100%;
     min-height: 0;
+    max-height: 100%;
     background: #1F2937 !important;
     overflow: auto !important;
+    overscroll-behavior: contain;
     font-size: 15px;
     line-height: 1.55;
 }

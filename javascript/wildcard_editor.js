@@ -251,8 +251,17 @@ const sdPromptLabWildcardEditor = (() => {
         renderTree();
     }
 
+    const treeIndentStepPx = 16;
+
     function applyTreeDepth(row, depth) {
         row.style.setProperty('--spl-tree-depth', String(depth));
+        row.style.setProperty('--spl-tree-indent', `${depth * treeIndentStepPx}px`);
+    }
+
+    function createTreeChildren() {
+        const children = document.createElement('div');
+        children.className = 'spl-tree-children';
+        return children;
     }
 
     function createTreeNode(item, search, depth = 0) {
@@ -268,9 +277,9 @@ const sdPromptLabWildcardEditor = (() => {
             applyTreeDepth(summary, depth);
             folder.appendChild(summary);
 
-            const list = document.createElement('ul');
-            childMatches.forEach(child => list.appendChild(child));
-            folder.appendChild(list);
+            const children = createTreeChildren();
+            childMatches.forEach(child => children.appendChild(child));
+            folder.appendChild(children);
             return folder;
         }
 
@@ -281,14 +290,14 @@ const sdPromptLabWildcardEditor = (() => {
             const summary = createFolderRow(item, isOpen);
             applyTreeDepth(summary, depth);
             folder.appendChild(summary);
-            const list = document.createElement('ul');
+            const children = createTreeChildren();
             if (isOpen) {
                 (item.children || []).forEach(child => {
                     const node = createTreeNode(child, search, depth + 1);
-                    if (node) list.appendChild(node);
+                    if (node) children.appendChild(node);
                 });
             }
-            folder.appendChild(list);
+            folder.appendChild(children);
             return folder;
         }
 
@@ -437,12 +446,26 @@ const sdPromptLabWildcardEditor = (() => {
         });
 
         host.addEventListener('click', handleEditorLinkClick);
+        configureEditorScrollBox();
+        measureEditorSoon();
     }
 
     function setEditorDocument(content) {
         state.silentChange = true;
         window.setSdPromptLabEditorDocument(state.editor, content || '');
         state.silentChange = false;
+        measureEditorSoon();
+    }
+
+    function measureEditorSoon() {
+        if (!state.editor?.requestMeasure) return;
+        requestAnimationFrame(() => state.editor?.requestMeasure());
+    }
+
+    function configureEditorScrollBox() {
+        if (!state.editor?.dom) return;
+        state.editor.dom.style.height = '100%';
+        state.editor.dom.style.overflow = 'auto';
     }
 
     async function openFile(path) {
@@ -757,6 +780,7 @@ const sdPromptLabWildcardEditor = (() => {
     }
 
     function setupEvents() {
+        ensureAutosaveDefault();
         getEl(ids.newFile)?.addEventListener('click', createFile);
         getEl(ids.newFolder)?.addEventListener('click', createFolder);
         getEl(ids.refresh)?.addEventListener('click', () => loadTree().catch(error => setStatus(error.message, 'error')));
@@ -783,6 +807,12 @@ const sdPromptLabWildcardEditor = (() => {
                 saveActiveFile(false);
             }
         });
+    }
+
+    function ensureAutosaveDefault() {
+        const checkbox = getEl(ids.autosave);
+        if (!checkbox) return;
+        checkbox.checked = true;
     }
 
     async function init() {

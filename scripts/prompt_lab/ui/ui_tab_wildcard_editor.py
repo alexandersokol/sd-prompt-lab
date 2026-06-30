@@ -33,6 +33,9 @@ def ui_tab_wildcard_editor():
                     <div id="sd-prompt-lab-wildcard-editor-path" class="spl-ide-path">No file selected</div>
                     <label class="spl-ide-autosave">
                         <input id="sd-prompt-lab-wildcard-editor-autosave" type="checkbox" checked>
+                        <span class="spl-autosave-switch" aria-hidden="true">
+                            <span class="spl-autosave-knob"></span>
+                        </span>
                         <span>Autosave</span>
                     </label>
                     <div class="spl-ide-toolbar">
