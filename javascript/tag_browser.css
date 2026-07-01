@@ -1,0 +1,433 @@
+/* Explicit display rules below (e.g. flex) would otherwise override the low-specificity
+   UA `[hidden]` rule, so re-assert it for anything toggled via the hidden attribute. */
+#sd-prompt-lab-tag-browser-root [hidden] {
+    display: none !important;
+}
+
+#sd-prompt-lab-tag-browser-root {
+    --spl-border: var(--border-color-primary, #444);
+    --spl-panel: var(--background-fill-secondary, rgba(255, 255, 255, 0.03));
+    --spl-panel-2: var(--background-fill-primary, rgba(255, 255, 255, 0.05));
+    --spl-text: var(--body-text-color, #dcdcdc);
+    --spl-muted: var(--body-text-color-subdued, #9a9a9a);
+    --spl-accent: var(--color-accent, #4a9eff);
+    color: var(--spl-text);
+    font-size: 14px;
+}
+
+/* ---- empty state -------------------------------------------------------- */
+#sd-prompt-lab-tag-browser-root .spl-tags-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 64px 24px;
+    text-align: center;
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-empty .material-symbols-rounded {
+    font-size: 48px;
+    opacity: 0.6;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--spl-text);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-empty-hint code {
+    background: var(--spl-panel-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+/* ---- toolbar ------------------------------------------------------------ */
+#sd-prompt-lab-tag-browser-root .spl-tags-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--spl-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-select {
+    background: var(--spl-panel-2);
+    color: var(--spl-text);
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    max-width: 320px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 220px;
+    min-width: 160px;
+    background: var(--spl-panel-2);
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    padding: 6px 10px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-search-wrap .material-symbols-rounded {
+    font-size: 18px;
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-search {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--spl-text);
+    font-size: 14px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--spl-muted);
+    cursor: pointer;
+    user-select: none;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-count {
+    margin-left: auto;
+    color: var(--spl-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- category chips ----------------------------------------------------- */
+#sd-prompt-lab-tag-browser-root .spl-tags-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-chip {
+    --cat: var(--spl-accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--spl-border);
+    border-radius: 999px;
+    background: var(--spl-panel);
+    color: var(--spl-text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: border-color 0.15s, background 0.15s;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-chip:hover {
+    border-color: var(--cat);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-chip.active {
+    border-color: var(--cat);
+    background: color-mix(in srgb, var(--cat) 18%, transparent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--cat);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-chip-count {
+    color: var(--spl-muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+}
+
+/* ---- body: list + detail ------------------------------------------------ */
+#sd-prompt-lab-tag-browser-root .spl-tags-body {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-list {
+    flex: 1;
+    height: 600px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid var(--spl-border);
+    border-radius: 10px;
+    background: var(--spl-panel);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--spl-border);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-row:hover {
+    background: var(--spl-panel-2);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-badge {
+    --cat: #888;
+    flex: 0 0 auto;
+    min-width: 74px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    color: var(--cat);
+    background: color-mix(in srgb, var(--cat) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cat) 45%, transparent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-name {
+    flex: 1;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    word-break: break-all;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-postcount {
+    flex: 0 0 auto;
+    color: var(--spl-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 48px;
+    text-align: right;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-pills {
+    display: flex;
+    gap: 4px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-pill {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--spl-panel-2);
+    color: var(--spl-muted);
+    border: 1px solid var(--spl-border);
+    white-space: nowrap;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-pill-warn {
+    color: #f5b642;
+    border-color: color-mix(in srgb, #f5b642 45%, transparent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-actions {
+    display: flex;
+    gap: 2px;
+    flex: 0 0 auto;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-row:hover .spl-tags-actions {
+    opacity: 1;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--spl-muted);
+    border-radius: 6px;
+    cursor: pointer;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-icon-btn:hover {
+    background: var(--spl-panel-2);
+    color: var(--spl-text);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-icon-btn .material-symbols-rounded {
+    font-size: 18px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-noresults {
+    padding: 32px;
+    text-align: center;
+    color: var(--spl-muted);
+}
+
+/* ---- detail drawer ------------------------------------------------------ */
+#sd-prompt-lab-tag-browser-root .spl-tags-detail {
+    flex: 0 0 340px;
+    height: 600px;
+    overflow-y: auto;
+    border: 1px solid var(--spl-border);
+    border-radius: 10px;
+    background: var(--spl-panel);
+    padding: 12px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-detail-name {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-weight: 600;
+    word-break: break-all;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-meta {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-meta th {
+    text-align: left;
+    color: var(--spl-muted);
+    font-weight: 500;
+    padding: 4px 8px 4px 0;
+    vertical-align: top;
+    white-space: nowrap;
+    width: 90px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-meta td {
+    padding: 4px 0;
+    word-break: break-word;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-detail-section {
+    margin-top: 12px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-detail-label {
+    color: var(--spl-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-sources {
+    margin: 0;
+    padding-left: 18px;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-raw {
+    background: var(--spl-panel-2);
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-detail-loading {
+    color: var(--spl-muted);
+    padding: 16px 0;
+}
+
+/* ---- status / buttons --------------------------------------------------- */
+#sd-prompt-lab-tag-browser-root .spl-tags-status {
+    margin-top: 8px;
+    color: var(--spl-muted);
+    font-size: 12px;
+    min-height: 16px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    background: var(--spl-panel-2);
+    color: var(--spl-text);
+    cursor: pointer;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-btn:hover {
+    border-color: var(--spl-accent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-btn .material-symbols-rounded {
+    font-size: 18px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-btn-primary {
+    background: color-mix(in srgb, var(--spl-accent) 22%, transparent);
+    border-color: var(--spl-accent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-empty-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+/* ---- add-dataset dialog ------------------------------------------------- */
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog {
+    width: min(520px, 92vw);
+    background: var(--background-fill-primary, #1e1e1e);
+    border: 1px solid var(--spl-border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--spl-text);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-msg {
+    color: var(--spl-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-msg code {
+    background: var(--spl-panel-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-input {
+    background: var(--spl-panel-2);
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: var(--spl-text);
+    font-size: 14px;
+    outline: none;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-input:focus {
+    border-color: var(--spl-accent);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-status {
+    min-height: 16px;
+    font-size: 12px;
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-status.error {
+    color: #ff6b6b;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+    #sd-prompt-lab-tag-browser-root .spl-tags-body {
+        flex-direction: column;
+    }
+    #sd-prompt-lab-tag-browser-root .spl-tags-detail {
+        flex-basis: auto;
+        height: auto;
+        max-height: 400px;
+    }
+}

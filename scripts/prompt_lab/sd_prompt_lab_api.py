@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import scripts.prompt_lab.sd_prompt_lab_db as db
+import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
 import scripts.prompt_lab.sd_prompt_lab_utils as utils
 import scripts.prompt_lab.sd_promt_lab_env as env
 
@@ -38,6 +39,10 @@ class WildcardRenameRequest(BaseModel):
 
 class WildcardDeleteRequest(BaseModel):
     path: str
+
+
+class TagDatasetDownloadRequest(BaseModel):
+    url: str
 
 
 def _wildcards_root():
@@ -179,6 +184,78 @@ def init_api(app: FastAPI):
                 os.remove(thumb_path)
 
             return {"status": "ok", "id": prompt_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/sd-prompt-lab/tags/sources")
+    async def get_tag_sources():
+        try:
+            tags_db.ensure_cache()
+            return {
+                "sources": tags_db.list_sources(),
+                "datasets_dir_exists": os.path.isdir(tags_db.get_datasets_dir()),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Defined as a sync `def` so FastAPI runs the (blocking, potentially large)
+    # download in a threadpool instead of on the event loop.
+    @app.post("/sd-prompt-lab/tags/download")
+    def download_tag_dataset(data: TagDatasetDownloadRequest):
+        try:
+            result = tags_db.download_hf_dataset(data.url)
+            return {"status": "ok", **result}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except requests.RequestException as e:
+            raise HTTPException(status_code=502, detail=f"Download failed: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/sd-prompt-lab/tags/detail")
+    async def get_tag_detail(name: str = Query(...)):
+        try:
+            tags_db.ensure_cache()
+            detail = tags_db.get_tag_detail(name)
+            if not detail:
+                raise HTTPException(status_code=404, detail="Tag not found")
+            return detail
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/sd-prompt-lab/tags")
+    async def get_tags(
+            q: str = Query(None),
+            category: int = Query(None),
+            source: str = Query(None),
+            include_deprecated: bool = Query(False),
+            sort: str = Query("post_count"),
+            limit: int = Query(60),
+            offset: int = Query(0),
+    ):
+        try:
+            tags_db.ensure_cache()
+
+            q = (q or "").strip() or None
+            limit = max(1, min(limit, 200))
+            offset = max(0, offset)
+
+            # Only honour a source that actually exists in the cache.
+            known_sources = {s["source"] for s in tags_db.list_sources()}
+            if source not in known_sources:
+                source = None
+
+            filters = dict(q=q, category=category, source=source,
+                           include_deprecated=include_deprecated)
+            return {
+                "tags": tags_db.query_tags(sort=sort, limit=limit, offset=offset, **filters),
+                "total": tags_db.count_tags(**filters),
+                "categories": tags_db.category_counts(
+                    source=source, include_deprecated=include_deprecated),
+                "sources": tags_db.list_sources(),
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

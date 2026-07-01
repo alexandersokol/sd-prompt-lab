@@ -1,4 +1,5 @@
 editor/node_modules
+datasets
 prompts.db
 .idea
 .DS_Store
