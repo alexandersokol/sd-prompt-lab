@@ -317,10 +317,15 @@
     border: 0;
     background: transparent;
     text-align: left;
+    outline: none;
 }
 
 .spl-tree-row:hover {
     background: rgba(255, 255, 255, 0.055);
+}
+
+.spl-tree-row:focus-visible {
+    box-shadow: inset 0 0 0 1px rgba(99, 168, 255, 0.72);
 }
 
 .spl-tree-row.is-selected {
@@ -357,6 +362,7 @@
 .spl-tree-label {
     min-width: 0;
     height: 34px;
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
     overflow: hidden;
@@ -368,6 +374,44 @@
 
 .spl-tree-folder-row .spl-tree-label {
     padding-left: 0;
+}
+
+.spl-tree-delete {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #9fb0c4;
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transform: translateX(2px);
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.spl-tree-row:hover .spl-tree-delete,
+.spl-tree-row:focus-within .spl-tree-delete,
+.spl-tree-delete:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.spl-tree-delete:hover,
+.spl-tree-delete:focus-visible {
+    color: #ffd8d3;
+    background: rgba(255, 123, 114, 0.16);
+    border-color: rgba(255, 123, 114, 0.34);
+}
+
+.spl-tree-delete-icon {
+    font-size: 18px;
+    line-height: 1;
 }
 
 .spl-tree-empty {

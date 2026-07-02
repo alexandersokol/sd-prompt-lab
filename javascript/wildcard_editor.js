@@ -305,9 +305,10 @@ const sdPromptLabWildcardEditor = (() => {
             return null;
         }
 
-        const row = document.createElement('button');
-        row.type = 'button';
+        const row = document.createElement('div');
         row.className = 'spl-tree-row spl-tree-file';
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
         row.dataset.path = item.path;
         row.dataset.type = 'file';
         row.title = item.path;
@@ -320,6 +321,7 @@ const sdPromptLabWildcardEditor = (() => {
         label.textContent = item.name;
         row.appendChild(icon('description', 'spl-tree-icon'));
         row.appendChild(label);
+        row.appendChild(createTreeDeleteButton(item.path, 'file'));
 
         row.addEventListener('click', () => openFile(item.path).catch(error => setStatus(error.message, 'error')));
         row.addEventListener('keydown', event => {
@@ -331,9 +333,10 @@ const sdPromptLabWildcardEditor = (() => {
     }
 
     function createFolderRow(item, isOpen) {
-        const row = document.createElement('button');
-        row.type = 'button';
+        const row = document.createElement('div');
         row.className = 'spl-tree-row spl-tree-folder-row';
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
         row.dataset.path = item.path;
         row.dataset.type = 'folder';
         row.title = item.path;
@@ -345,6 +348,7 @@ const sdPromptLabWildcardEditor = (() => {
         label.className = 'spl-tree-label';
         label.textContent = item.name;
         row.appendChild(label);
+        row.appendChild(createTreeDeleteButton(item.path, 'folder'));
         row.addEventListener('click', () => toggleFolder(item.path));
         row.addEventListener('keydown', event => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -352,6 +356,22 @@ const sdPromptLabWildcardEditor = (() => {
             toggleFolder(item.path);
         });
         return row;
+    }
+
+    function createTreeDeleteButton(path, type) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'spl-tree-delete';
+        button.title = `Delete ${path}`;
+        button.setAttribute('aria-label', `Delete ${path}`);
+        button.appendChild(icon('delete', 'spl-tree-delete-icon'));
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            selectPath(path, type);
+            deletePath(path, type).catch(error => setStatus(error.message, 'error'));
+        });
+        return button;
     }
 
     function toggleFolder(path) {
@@ -683,9 +703,13 @@ const sdPromptLabWildcardEditor = (() => {
     async function deleteSelected() {
         const selected = selectedOrActivePath();
         if (!selected) return;
+        await deletePath(selected.path, selected.type);
+    }
+
+    async function deletePath(path, type) {
         const shouldDelete = await awaitConfirm(
-            `This will remove "${selected.path}" from the wildcards directory.`,
-            `Delete ${selected.type}`,
+            `This will remove "${path}" from the wildcards directory${type === 'folder' ? ' with all nested files and folders' : ''}.`,
+            `Delete ${type}`,
             'delete',
             'Delete',
             true
@@ -696,13 +720,13 @@ const sdPromptLabWildcardEditor = (() => {
             await requestJson('/sd-prompt-lab/wildcards/editor/delete', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({path: selected.path})
+                body: JSON.stringify({path})
             });
-            closeDeletedOpenFiles(selected.path, selected.type);
+            closeDeletedOpenFiles(path, type);
             await loadTree();
             state.selectedPath = null;
             state.selectedType = null;
-            setStatus(`Deleted ${selected.path}`, 'ok');
+            setStatus(`Deleted ${path}`, 'ok');
         } catch (error) {
             setStatus(error.message, 'error');
         }
