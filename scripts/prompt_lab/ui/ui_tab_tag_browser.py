@@ -6,15 +6,16 @@ def ui_tab_tag_browser():
         <div id="sd-prompt-lab-tag-browser-root" class="spl-tags">
             <div id="sd-prompt-lab-tags-empty" class="spl-tags-empty" hidden>
                 <span class="material-symbols-rounded" aria-hidden="true">database</span>
-                <div class="spl-tags-empty-title">No tag datasets found</div>
+                <div class="spl-tags-empty-title">No datasets added yet</div>
                 <div class="spl-tags-empty-hint">
-                    Add <code>.jsonl</code>, <code>.json</code> or <code>.csv</code> tag files
-                    anywhere under the <code>datasets/</code> directory, then press refresh.
+                    Download a tag dataset to start browsing, or add
+                    <code>.jsonl</code> / <code>.json</code> / <code>.csv</code> files under the
+                    <code>datasets/</code> directory.
                 </div>
                 <div class="spl-tags-empty-actions">
                     <button id="sd-prompt-lab-tags-empty-add" class="spl-tags-btn spl-tags-btn-primary">
-                        <span class="material-symbols-rounded" aria-hidden="true">cloud_download</span>
-                        Add from Hugging Face
+                        <span class="material-symbols-rounded" aria-hidden="true">download</span>
+                        Browse datasets
                     </button>
                     <button id="sd-prompt-lab-tags-empty-refresh" class="spl-tags-btn">
                         <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
@@ -47,9 +48,9 @@ def ui_tab_tag_browser():
                         <span>Show deprecated</span>
                     </label>
                     <div id="sd-prompt-lab-tags-count" class="spl-tags-count"></div>
-                    <button id="sd-prompt-lab-tags-add" class="spl-tags-btn" title="Download a dataset from Hugging Face">
-                        <span class="material-symbols-rounded" aria-hidden="true">cloud_download</span>
-                        Add dataset
+                    <button id="sd-prompt-lab-tags-add" class="spl-tags-btn" title="Download tag datasets">
+                        <span class="material-symbols-rounded" aria-hidden="true">download</span>
+                        Datasets
                     </button>
                 </div>
 
@@ -73,27 +74,23 @@ def ui_tab_tag_browser():
             </div>
 
             <div id="sd-prompt-lab-tags-dialog" class="spl-tags-dialog-backdrop" hidden>
-                <form id="sd-prompt-lab-tags-dialog-form" class="spl-tags-dialog">
-                    <div class="spl-tags-dialog-title">
-                        <span class="material-symbols-rounded" aria-hidden="true">cloud_download</span>
-                        Add dataset from Hugging Face
+                <div class="spl-tags-dialog spl-tags-presets-dialog">
+                    <div class="spl-tags-dialog-header">
+                        <div class="spl-tags-dialog-title">
+                            <span class="material-symbols-rounded" aria-hidden="true">download</span>
+                            Download tag datasets
+                        </div>
+                        <button type="button" id="sd-prompt-lab-tags-dialog-cancel"
+                                class="spl-tags-icon-btn" title="Close" aria-label="Close">
+                            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                        </button>
                     </div>
                     <div class="spl-tags-dialog-msg">
-                        Paste a Hugging Face dataset link. The tag file
-                        (<code>.jsonl</code> preferred, otherwise <code>.json</code> or
-                        <code>.csv</code>) is downloaded into <code>datasets/&lt;name&gt;/</code>
-                        and added to the browser.
+                        Downloaded datasets are stored under <code>datasets/</code> and can be
+                        re-downloaded to refresh them.
                     </div>
-                    <input id="sd-prompt-lab-tags-dialog-input" class="spl-tags-dialog-input"
-                           placeholder="https://huggingface.co/datasets/owner/name" autocomplete="off">
-                    <div id="sd-prompt-lab-tags-dialog-status" class="spl-tags-dialog-status"></div>
-                    <div class="spl-tags-dialog-actions">
-                        <button type="button" id="sd-prompt-lab-tags-dialog-cancel"
-                                class="spl-tags-btn">Cancel</button>
-                        <button type="submit" id="sd-prompt-lab-tags-dialog-submit"
-                                class="spl-tags-btn spl-tags-btn-primary">Download</button>
-                    </div>
-                </form>
+                    <div id="sd-prompt-lab-tags-presets-list" class="spl-tags-presets-list"></div>
+                </div>
             </div>
         </div>
     """)

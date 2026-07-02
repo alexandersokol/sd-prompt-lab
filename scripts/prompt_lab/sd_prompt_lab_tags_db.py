@@ -1,14 +1,13 @@
 import csv
 import json
 import os
-import re
 import sqlite3
 import time
-from urllib.parse import urlparse
 
 import requests
 
 import scripts.prompt_lab.sd_promt_lab_env as env
+import scripts.prompt_lab.sd_prompt_lab_tag_presets as presets_registry
 
 # Recursive tag dataset cache.
 #
@@ -20,6 +19,9 @@ import scripts.prompt_lab.sd_promt_lab_env as env
 _CACHE_DIR_NAME = ".cache"
 _CACHE_DB_NAME = "tags.db"
 _IMPORT_BATCH = 5000
+
+# Per-dataset manifest written on preset download (records format + how to interpret it).
+_MANIFEST_NAME = ".spl-dataset.json"
 
 # Supported tag file extensions, in descending preference for same-basename shadowing.
 _SOURCE_EXT_ORDER = (".jsonl", ".json", ".csv")
@@ -82,21 +84,46 @@ def discover_sources():
             except OSError:
                 continue
             rel = os.path.relpath(abspath, datasets_dir).replace(os.sep, "/")
+
+            # An optional sibling manifest records how the dataset should be interpreted.
+            mapping, manifest_mtime = _read_manifest(root)
+
             sources.append({
                 "source": rel,
                 "abspath": abspath,
                 "format": fmt,
                 "mtime": stat.st_mtime,
                 "size": stat.st_size,
+                "mapping": mapping,
+                "manifest_mtime": manifest_mtime,
             })
 
     sources.sort(key=lambda s: s["source"])
     return sources
 
 
+def _read_manifest(directory):
+    """Return (mapping, manifest_mtime) from a directory's .spl-dataset.json, else (None, 0)."""
+    path = os.path.join(directory, _MANIFEST_NAME)
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None, 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        mapping = data.get("mapping") if isinstance(data, dict) else None
+    except (ValueError, TypeError, OSError):
+        mapping = None
+    return mapping, stat.st_mtime
+
+
 def _signature(sources):
     return json.dumps(
-        [[s["source"], round(s["mtime"], 3), s["size"]] for s in sources],
+        [
+            [s["source"], round(s["mtime"], 3), s["size"], round(s.get("manifest_mtime", 0), 3)]
+            for s in sources
+        ],
         sort_keys=True,
     )
 
@@ -254,6 +281,20 @@ def _coerce_int(value, default=0):
         return default
 
 
+def _apply_mapping(record, mapping):
+    """Copy source keys onto canonical fields per a preset's mapping. No-op when mapping is falsy.
+
+    mapping is {canonical_field: source_key}; original keys are kept so metadata stays intact.
+    """
+    if not mapping:
+        return record
+    result = dict(record)
+    for canonical, source_key in mapping.items():
+        if source_key in record and record[source_key] is not None:
+            result[canonical] = record[source_key]
+    return result
+
+
 def _normalize(record):
     """Return (tag_row, source_name) for a record, or None if it has no usable name.
 
@@ -296,9 +337,11 @@ def _rebuild(conn, sources):
 
     for source in sources:
         source_name = source["source"]
+        mapping = source.get("mapping")
         tag_batch = []
         src_batch = []
         for record in _iter_records(source):
+            record = _apply_mapping(record, mapping)
             normalized = _normalize(record)
             if normalized is None:
                 continue
@@ -462,90 +505,16 @@ def get_tag_detail(name):
 
 
 # ---------------------------------------------------------------------------
-# Hugging Face dataset download
+# Preset dataset download
 # ---------------------------------------------------------------------------
 
-_HF_HOSTS = {"huggingface.co", "www.huggingface.co"}
-# .json files that are dataset metadata rather than tag data.
-_METADATA_JSON = {"dataset_infos.json", "dataset_info.json", "config.json"}
-_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _DOWNLOAD_CHUNK = 1 << 20  # 1 MiB
+# Local tag files a re-download must clear so a new format can't be shadowed by an old one.
+_STALE_TAG_FILES = ("tags.jsonl", "tags.json", "tags.csv", "tags.sqlite", "tags.db")
 
 
-def _parse_hf_dataset(url):
-    """Extract (owner, repo) from a Hugging Face dataset URL or 'owner/repo' string."""
-    url = (url or "").strip()
-    if not url:
-        raise ValueError("Please provide a dataset URL")
-
-    if "://" not in url:
-        parts = [p for p in url.strip("/").split("/") if p]
-        if len(parts) == 2:
-            return parts[0], parts[1]
-        raise ValueError("Enter a huggingface.co dataset URL or 'owner/name'")
-
-    parsed = urlparse(url)
-    if parsed.hostname not in _HF_HOSTS:
-        raise ValueError("URL must point to huggingface.co")
-    segments = [s for s in parsed.path.split("/") if s]
-    if len(segments) >= 3 and segments[0] == "datasets":
-        return segments[1], segments[2]
-    raise ValueError("Not a Hugging Face dataset URL (expected /datasets/owner/name)")
-
-
-def _pick_remote_file(siblings):
-    """Choose the tag file to download: prefer .jsonl, then .json, then .csv (tags.* first)."""
-    for ext in ("jsonl", "json", "csv"):
-        candidates = [
-            f for f in siblings
-            if f.lower().endswith(f".{ext}")
-            and os.path.basename(f).lower() not in _METADATA_JSON
-        ]
-        if candidates:
-            preferred = [f for f in candidates if os.path.basename(f).lower() == f"tags.{ext}"]
-            return (preferred or candidates)[0], ext
-
-    return None, None
-
-
-def download_hf_dataset(url):
-    """Download a HF dataset's tag file into datasets/<name>/tags.jsonl|json and refresh the cache.
-
-    Returns {name, source, format}. Raises ValueError for bad input and
-    requests.RequestException for network failures.
-    """
-    owner, repo = _parse_hf_dataset(url)
-    safe_name = _SAFE_NAME.sub("-", repo).strip("-.") or "dataset"
-
-    # Discover the actual files in the dataset repo.
-    api_url = f"https://huggingface.co/api/datasets/{owner}/{repo}"
-    resp = requests.get(api_url, timeout=20)
-    if resp.status_code in (401, 403, 404):
-        # HF returns 401 for missing or private/gated datasets.
-        raise ValueError(f"Dataset '{owner}/{repo}' was not found or is private/gated")
-    resp.raise_for_status()
-    siblings = [
-        s.get("rfilename") for s in resp.json().get("siblings", []) if s.get("rfilename")
-    ]
-    remote_file, fmt = _pick_remote_file(siblings)
-    if not remote_file:
-        raise ValueError("No .jsonl or .json tag file found in this dataset")
-
-    datasets_dir = os.path.abspath(get_datasets_dir())
-    dest_dir = os.path.abspath(os.path.join(datasets_dir, safe_name))
-    if os.path.commonpath([datasets_dir, dest_dir]) != datasets_dir:
-        raise ValueError("Invalid dataset name")
-    os.makedirs(dest_dir, exist_ok=True)
-
-    # Remove any prior tag file so the freshly downloaded one is authoritative
-    # (a stale tags.jsonl would otherwise shadow a newly downloaded tags.json/.csv).
-    for stale in ("tags.jsonl", "tags.json", "tags.csv"):
-        stale_path = os.path.join(dest_dir, stale)
-        if os.path.exists(stale_path):
-            os.remove(stale_path)
-
-    dest = os.path.join(dest_dir, f"tags.{fmt}")
-    file_url = f"https://huggingface.co/datasets/{owner}/{repo}/resolve/main/{remote_file}"
+def _download_file(file_url, dest):
+    """Stream a URL to dest atomically via a .part temp file. Raises requests exceptions."""
     tmp = dest + ".part"
     try:
         with requests.get(file_url, stream=True, timeout=60) as r:
@@ -559,8 +528,87 @@ def download_hf_dataset(url):
         if os.path.exists(tmp):
             os.remove(tmp)
 
+
+def download_preset(preset):
+    """Download a preset's tag file into datasets/<local_dir>/tags.<fmt> and refresh the cache.
+
+    Tries preset['files'] in order, using the first that resolves. Returns
+    {id, name, source, format}. Raises ValueError for bad config / no available file and
+    requests.RequestException for network failures.
+    """
+    repo = preset["repo"]
+    datasets_dir = os.path.abspath(get_datasets_dir())
+    dest_dir = os.path.abspath(os.path.join(datasets_dir, preset["local_dir"]))
+    if os.path.commonpath([datasets_dir, dest_dir]) != datasets_dir:
+        raise ValueError("Invalid preset local_dir")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # Replace semantics: drop any prior tag file before writing the fresh one.
+    for stale in _STALE_TAG_FILES:
+        stale_path = os.path.join(dest_dir, stale)
+        if os.path.exists(stale_path):
+            os.remove(stale_path)
+
+    chosen = None
+    last_status = None
+    for candidate in preset.get("files", []):
+        remote, fmt = candidate["remote"], candidate["format"]
+        file_url = f"https://huggingface.co/datasets/{repo}/resolve/main/{remote}"
+        dest = os.path.join(dest_dir, f"tags.{fmt}")
+        try:
+            _download_file(file_url, dest)
+            chosen = (dest, fmt)
+            break
+        except requests.HTTPError as e:
+            last_status = e.response.status_code if e.response is not None else None
+            if last_status in (401, 403, 404):
+                continue  # try the next candidate file
+            raise
+
+    if not chosen:
+        detail = f" (last status {last_status})" if last_status else ""
+        raise ValueError(f"None of the expected files were found in '{repo}'{detail}")
+
+    dest, fmt = chosen
+
+    # Persist how this dataset was produced and how to interpret it.
+    manifest = {
+        "preset_id": preset["id"],
+        "format": fmt,
+        "remote": os.path.basename(dest),
+        "mapping": preset.get("mapping"),
+        "downloaded_at": time.time(),
+    }
+    with open(os.path.join(dest_dir, _MANIFEST_NAME), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+
     # Rebuild the cache so the new dataset is immediately searchable.
     ensure_cache()
 
     source_rel = os.path.relpath(dest, datasets_dir).replace(os.sep, "/")
-    return {"name": safe_name, "source": source_rel, "format": fmt}
+    return {
+        "id": preset["id"],
+        "name": preset.get("name", preset["id"]),
+        "source": source_rel,
+        "format": fmt,
+    }
+
+
+def presets_status():
+    """Return each registered preset with whether it is downloaded and its cached tag count."""
+    ensure_cache()
+    sources = list_sources()
+    result = []
+    for preset in presets_registry.list_presets():
+        prefix = preset["local_dir"].rstrip("/") + "/"
+        matched = [s for s in sources if s["source"].startswith(prefix)]
+        result.append({
+            "id": preset["id"],
+            "name": preset["name"],
+            "description": preset.get("description", ""),
+            "homepage": preset.get("homepage", ""),
+            "repo": preset.get("repo", ""),
+            "downloaded": bool(matched),
+            "count": sum(s["count"] for s in matched),
+        })
+    return result

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 import scripts.prompt_lab.sd_prompt_lab_db as db
 import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
+import scripts.prompt_lab.sd_prompt_lab_tag_presets as tag_presets
 import scripts.prompt_lab.sd_prompt_lab_utils as utils
 import scripts.prompt_lab.sd_promt_lab_env as env
 
@@ -41,8 +42,8 @@ class WildcardDeleteRequest(BaseModel):
     path: str
 
 
-class TagDatasetDownloadRequest(BaseModel):
-    url: str
+class TagPresetDownloadRequest(BaseModel):
+    id: str
 
 
 def _wildcards_root():
@@ -198,12 +199,22 @@ def init_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.get("/sd-prompt-lab/tags/presets")
+    def get_tag_presets():
+        try:
+            return {"presets": tags_db.presets_status()}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     # Defined as a sync `def` so FastAPI runs the (blocking, potentially large)
     # download in a threadpool instead of on the event loop.
-    @app.post("/sd-prompt-lab/tags/download")
-    def download_tag_dataset(data: TagDatasetDownloadRequest):
+    @app.post("/sd-prompt-lab/tags/presets/download")
+    def download_tag_preset(data: TagPresetDownloadRequest):
+        preset = tag_presets.get_preset(data.id)
+        if not preset:
+            raise HTTPException(status_code=400, detail=f"Unknown preset '{data.id}'")
         try:
-            result = tags_db.download_hf_dataset(data.url)
+            result = tags_db.download_preset(preset)
             return {"status": "ok", **result}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

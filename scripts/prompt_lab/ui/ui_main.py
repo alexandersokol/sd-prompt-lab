@@ -3,7 +3,6 @@ import os.path
 import gradio as gr
 
 import scripts.prompt_lab.sd_prompt_lab_utils as utils
-import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
 
 from scripts.prompt_lab.ui.ui_tab_browse import ui_tab_browse
 from scripts.prompt_lab.ui.ui_tab_create import ui_tab_create
@@ -30,9 +29,9 @@ def ui_main_block():
                 with gr.Column():
                     ui_tab_wildcard_editor()
 
-        if os.path.isdir(tags_db.get_datasets_dir()):
-            with gr.Tab("Tag Browser", elem_id='sd-prompt-lab-tag-browser-tab'):
-                with gr.Column():
-                    ui_tab_tag_browser()
+        # Always available: datasets can be downloaded from within the tab.
+        with gr.Tab("Tag Browser", elem_id='sd-prompt-lab-tag-browser-tab'):
+            with gr.Column():
+                ui_tab_tag_browser()
 
     return main_block

@@ -44,12 +44,10 @@
         detailClose: 'sd-prompt-lab-tags-detail-close',
         add: 'sd-prompt-lab-tags-add',
         emptyAdd: 'sd-prompt-lab-tags-empty-add',
+        emptyRefresh: 'sd-prompt-lab-tags-empty-refresh',
         dialog: 'sd-prompt-lab-tags-dialog',
-        dialogForm: 'sd-prompt-lab-tags-dialog-form',
-        dialogInput: 'sd-prompt-lab-tags-dialog-input',
-        dialogStatus: 'sd-prompt-lab-tags-dialog-status',
         dialogCancel: 'sd-prompt-lab-tags-dialog-cancel',
-        dialogSubmit: 'sd-prompt-lab-tags-dialog-submit',
+        presetsList: 'sd-prompt-lab-tags-presets-list',
     };
 
     const $ = (id) => gradioApp()?.getElementById(id);
@@ -276,7 +274,7 @@
             }
 
             if (state.total === 0) {
-                list.innerHTML = '<div class="spl-tags-noresults">No tags match your filters.</div>';
+                list.innerHTML = '<div class="spl-tags-noresults">No entries available to display.</div>';
             }
             setStatus('Ready');
         } catch (e) {
@@ -348,20 +346,13 @@
             </div>`;
     }
 
-    // ---- add dataset dialog --------------------------------------------------
+    // ---- datasets (presets) dialog -------------------------------------------
 
-    function openDialog() {
+    function openPresetsDialog() {
         const dialog = $(ids.dialog);
         if (!dialog) return;
         dialog.hidden = false;
-        const input = $(ids.dialogInput);
-        const status = $(ids.dialogStatus);
-        if (input) input.value = '';
-        if (status) {
-            status.textContent = '';
-            status.classList.remove('error');
-        }
-        setTimeout(() => input?.focus(), 0);
+        loadPresets();
     }
 
     function closeDialog() {
@@ -369,35 +360,72 @@
         if (dialog) dialog.hidden = true;
     }
 
-    async function downloadDataset(url) {
-        const status = $(ids.dialogStatus);
-        const submit = $(ids.dialogSubmit);
-        if (status) {
-            status.textContent = 'Downloading… this can take a while for large datasets.';
-            status.classList.remove('error');
-        }
-        if (submit) submit.disabled = true;
+    async function loadPresets() {
+        const container = $(ids.presetsList);
+        if (!container) return;
+        container.innerHTML = '<div class="spl-tags-presets-loading">Loading datasets…</div>';
         try {
-            const res = await fetch(`${API}/tags/download`, {
+            const res = await fetch(`${API}/tags/presets`);
+            if (!res.ok) throw new Error('Failed to load datasets');
+            const data = await res.json();
+            const presets = data.presets || [];
+            container.innerHTML = presets.length
+                ? presets.map(presetRowHtml).join('')
+                : '<div class="spl-tags-presets-loading">No datasets are available.</div>';
+        } catch (e) {
+            container.innerHTML = `<div class="spl-tags-presets-loading">${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function presetRowHtml(p) {
+        const status = p.downloaded
+            ? `<span class="spl-tags-preset-status downloaded">
+                   <span class="material-symbols-rounded">check_circle</span>
+                   Downloaded${p.count ? ` · ${p.count.toLocaleString()} tags` : ''}
+               </span>`
+            : '<span class="spl-tags-preset-status">Not downloaded</span>';
+        const home = p.homepage
+            ? `<a class="spl-tags-preset-link" href="${escapeHtml(p.homepage)}" target="_blank" rel="noopener">source ↗</a>`
+            : '';
+        return `
+            <div class="spl-tags-preset" data-id="${escapeHtml(p.id)}">
+                <div class="spl-tags-preset-info">
+                    <div class="spl-tags-preset-name">${escapeHtml(p.name)} ${home}</div>
+                    <div class="spl-tags-preset-desc">${escapeHtml(p.description || '')}</div>
+                    ${status}
+                </div>
+                <button class="spl-tags-btn spl-tags-preset-btn${p.downloaded ? '' : ' spl-tags-btn-primary'}"
+                        data-action="download">
+                    ${p.downloaded ? 'Re-download' : 'Download'}
+                </button>
+            </div>`;
+    }
+
+    async function downloadPreset(id, rowEl) {
+        const btn = rowEl.querySelector('[data-action="download"]');
+        const dialog = $(ids.dialog);
+        const buttons = dialog ? dialog.querySelectorAll('button') : [];
+        buttons.forEach((b) => (b.disabled = true));
+        if (btn) btn.textContent = 'Downloading…';
+        try {
+            const res = await fetch(`${API}/tags/presets/download`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({url}),
+                body: JSON.stringify({id}),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'Download failed');
 
-            closeDialog();
+            await loadPresets();                 // refresh check marks / counts
             state.source = data.source || '';
-            const hasData = await loadSources();
+            const hasData = await loadSources();  // toggles empty <-> browser
             if (hasData) resetAndLoad();
-            flashStatus(`Added dataset "${data.name}"`);
+            flashStatus(`Downloaded "${data.name}"`);
         } catch (e) {
-            if (status) {
-                status.textContent = e.message;
-                status.classList.add('error');
-            }
+            flashStatus(`Error: ${e.message}`);
+            if (btn) btn.textContent = 'Download';
         } finally {
-            if (submit) submit.disabled = false;
+            buttons.forEach((b) => (b.disabled = false));
         }
     }
 
@@ -479,24 +507,17 @@
 
         $(ids.emptyRefresh)?.addEventListener('click', () => init(true));
 
-        $(ids.add)?.addEventListener('click', openDialog);
-        $(ids.emptyAdd)?.addEventListener('click', openDialog);
+        $(ids.add)?.addEventListener('click', openPresetsDialog);
+        $(ids.emptyAdd)?.addEventListener('click', openPresetsDialog);
         $(ids.dialogCancel)?.addEventListener('click', closeDialog);
         $(ids.dialog)?.addEventListener('click', (e) => {
             if (e.target === $(ids.dialog)) closeDialog();
         });
-        $(ids.dialogForm)?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const url = $(ids.dialogInput)?.value.trim();
-            if (!url) {
-                const status = $(ids.dialogStatus);
-                if (status) {
-                    status.textContent = 'Please paste a dataset URL';
-                    status.classList.add('error');
-                }
-                return;
-            }
-            downloadDataset(url);
+        $(ids.presetsList)?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action="download"]');
+            if (!btn) return;
+            const row = e.target.closest('.spl-tags-preset');
+            if (row) downloadPreset(row.dataset.id, row);
         });
     }
 
