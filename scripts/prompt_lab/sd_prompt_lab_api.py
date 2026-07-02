@@ -2,6 +2,7 @@ import hashlib
 import mimetypes
 import os
 import shutil
+import threading
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -13,6 +14,10 @@ import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
 import scripts.prompt_lab.sd_prompt_lab_tag_presets as tag_presets
 import scripts.prompt_lab.sd_prompt_lab_utils as utils
 import scripts.prompt_lab.sd_promt_lab_env as env
+
+# In-flight / finished dataset download jobs, keyed by preset id (see the preset download routes).
+_download_jobs = {}
+_download_jobs_lock = threading.Lock()
 
 
 # Pydantic model for input validation
@@ -206,22 +211,42 @@ def init_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    # Defined as a sync `def` so FastAPI runs the (blocking, potentially large)
-    # download in a threadpool instead of on the event loop.
+    # Downloads run in a background thread so a (potentially multi-GB) download reports
+    # live progress via the poll endpoint instead of blocking one long request.
     @app.post("/sd-prompt-lab/tags/presets/download")
     def download_tag_preset(data: TagPresetDownloadRequest):
         preset = tag_presets.get_preset(data.id)
         if not preset:
             raise HTTPException(status_code=400, detail=f"Unknown preset '{data.id}'")
-        try:
-            result = tags_db.download_preset(preset)
-            return {"status": "ok", **result}
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except requests.RequestException as e:
-            raise HTTPException(status_code=502, detail=f"Download failed: {e}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+
+        with _download_jobs_lock:
+            existing = _download_jobs.get(data.id)
+            if existing and not existing.get("done"):
+                return {"status": "already_running"}
+            job = {"phase": "starting", "downloaded": 0, "total": 0,
+                   "imported": 0, "done": False, "error": None, "result": None}
+            _download_jobs[data.id] = job
+
+        def run():
+            try:
+                result = tags_db.download_preset(preset, progress=job)
+                job.update(phase="done", done=True, result=result)
+            except ValueError as e:
+                job.update(phase="error", done=True, error=str(e))
+            except requests.RequestException as e:
+                job.update(phase="error", done=True, error=f"Download failed: {e}")
+            except Exception as e:
+                job.update(phase="error", done=True, error=str(e))
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"status": "started", "id": data.id}
+
+    @app.get("/sd-prompt-lab/tags/presets/download/progress")
+    def download_tag_preset_progress(id: str = Query(...)):
+        job = _download_jobs.get(id)
+        if not job:
+            return {"phase": "idle", "done": True}
+        return dict(job)
 
     @app.get("/sd-prompt-lab/tags/detail")
     async def get_tag_detail(name: str = Query(...)):

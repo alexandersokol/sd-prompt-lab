@@ -2,12 +2,16 @@ import csv
 import json
 import os
 import sqlite3
+import threading
 import time
 
 import requests
 
 import scripts.prompt_lab.sd_promt_lab_env as env
 import scripts.prompt_lab.sd_prompt_lab_tag_presets as presets_registry
+
+# Serializes cache rebuilds so a background download's import can't race concurrent readers.
+_rebuild_lock = threading.Lock()
 
 # Recursive tag dataset cache.
 #
@@ -24,7 +28,7 @@ _IMPORT_BATCH = 5000
 _MANIFEST_NAME = ".spl-dataset.json"
 
 # Supported tag file extensions, in descending preference for same-basename shadowing.
-_SOURCE_EXT_ORDER = (".jsonl", ".json", ".csv")
+_SOURCE_EXT_ORDER = (".jsonl", ".json", ".csv", ".sqlite", ".db")
 _SOURCE_EXTS = set(_SOURCE_EXT_ORDER)
 
 
@@ -43,7 +47,15 @@ def get_tags_db_path():
 
 
 def connect():
-    return sqlite3.connect(get_tags_db_path())
+    conn = sqlite3.connect(get_tags_db_path())
+    try:
+        # WAL lets readers keep serving the previous cache while a rebuild is in progress;
+        # busy_timeout absorbs brief lock contention rather than erroring out.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.Error:
+        pass
+    return conn
 
 
 def discover_sources():
@@ -77,6 +89,8 @@ def discover_sources():
                 if pref in variants:
                     chosen, fmt = variants[pref], pref.lstrip(".")
                     break
+            if fmt == "db":
+                fmt = "sqlite"
 
             abspath = os.path.join(root, chosen)
             try:
@@ -86,7 +100,7 @@ def discover_sources():
             rel = os.path.relpath(abspath, datasets_dir).replace(os.sep, "/")
 
             # An optional sibling manifest records how the dataset should be interpreted.
-            mapping, manifest_mtime = _read_manifest(root)
+            manifest, manifest_mtime = _read_manifest(root)
 
             sources.append({
                 "source": rel,
@@ -94,7 +108,8 @@ def discover_sources():
                 "format": fmt,
                 "mtime": stat.st_mtime,
                 "size": stat.st_size,
-                "mapping": mapping,
+                "mapping": manifest.get("mapping"),
+                "sqlite_query": manifest.get("sqlite_query"),
                 "manifest_mtime": manifest_mtime,
             })
 
@@ -103,19 +118,20 @@ def discover_sources():
 
 
 def _read_manifest(directory):
-    """Return (mapping, manifest_mtime) from a directory's .spl-dataset.json, else (None, 0)."""
+    """Return (manifest_dict, manifest_mtime) from a directory's .spl-dataset.json, else ({}, 0)."""
     path = os.path.join(directory, _MANIFEST_NAME)
     try:
         stat = os.stat(path)
     except OSError:
-        return None, 0
+        return {}, 0
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        mapping = data.get("mapping") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            data = {}
     except (ValueError, TypeError, OSError):
-        mapping = None
-    return mapping, stat.st_mtime
+        data = {}
+    return data, stat.st_mtime
 
 
 def _signature(sources):
@@ -183,6 +199,8 @@ def _iter_records(source):
                     yield record
     elif fmt == "csv":
         yield from _iter_csv_records(path)
+    elif fmt in ("sqlite", "db"):
+        yield from _iter_sqlite_records(source)
     else:
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -272,6 +290,79 @@ def _iter_csv_records(path):
                 yield record
 
 
+def _canonicalize_record(record):
+    """Rename known column aliases to canonical fields (name/post_count/category/words)."""
+    out = {}
+    for key, value in record.items():
+        canonical = _CSV_FIELD_ALIASES.get(str(key).lower())
+        if canonical == "words":
+            out["words"] = _split_aliases(value) if isinstance(value, str) else value
+        elif canonical:
+            out[canonical] = value
+        else:
+            out[key] = value
+    return out
+
+
+def _auto_sqlite_query(cur):
+    """Best-effort query for a flat tag table when no explicit query is configured."""
+    cur.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    tables = [r[0] for r in cur.fetchall()]
+    # Never ingest our own cache database.
+    if "cache_meta" in tables and "tag_sources" in tables:
+        return None
+
+    def columns(table):
+        cur.execute(f'PRAGMA table_info("{table}")')
+        return [r[1].lower() for r in cur.fetchall()]
+
+    candidate = None
+    for table in tables:
+        if table.startswith("sqlite_"):
+            continue
+        cols = columns(table)
+        if any(alias in cols for alias in ("name", "tag", "tag_name", "tagname")):
+            candidate = table
+            if table.lower() == "tags":
+                break
+    return f'SELECT * FROM "{candidate}"' if candidate else None
+
+
+def _iter_sqlite_records(source):
+    """Yield tag records from a SQLite source via its preset query, or a flat auto-detect."""
+    path = source["abspath"]
+    query = source.get("sqlite_query")
+    # Read-only + immutable so we never touch the file and can read WAL-mode DBs without sidecars.
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+    except sqlite3.Error as e:
+        print(f"[sd-prompt-lab] could not open sqlite source {source['source']}: {e}")
+        return
+    try:
+        cur = con.cursor()
+        if not query:
+            try:
+                query = _auto_sqlite_query(cur)
+            except sqlite3.Error:
+                query = None
+            if not query:
+                return
+        try:
+            cur.execute(query)
+        except sqlite3.Error as e:
+            print(f"[sd-prompt-lab] sqlite query failed for {source['source']}: {e}")
+            return
+        cols = [d[0] for d in cur.description]
+        while True:
+            rows = cur.fetchmany(_IMPORT_BATCH)
+            if not rows:
+                break
+            for row in rows:
+                yield _canonicalize_record(dict(zip(cols, row)))
+    finally:
+        con.close()
+
+
 def _coerce_int(value, default=0):
     try:
         if value is None or value == "":
@@ -330,11 +421,12 @@ _UPSERT_TAG = """
 _INSERT_SOURCE = "INSERT OR IGNORE INTO tag_sources (name, source) VALUES (?, ?)"
 
 
-def _rebuild(conn, sources):
+def _rebuild(conn, sources, progress_cb=None):
     _drop_schema(conn)
     _create_schema(conn)
     c = conn.cursor()
 
+    processed = 0
     for source in sources:
         source_name = source["source"]
         mapping = source.get("mapping")
@@ -352,12 +444,18 @@ def _rebuild(conn, sources):
             if len(tag_batch) >= _IMPORT_BATCH:
                 c.executemany(_UPSERT_TAG, tag_batch)
                 c.executemany(_INSERT_SOURCE, src_batch)
+                processed += len(tag_batch)
                 tag_batch.clear()
                 src_batch.clear()
+                if progress_cb:
+                    progress_cb(processed)
 
         if tag_batch:
             c.executemany(_UPSERT_TAG, tag_batch)
             c.executemany(_INSERT_SOURCE, src_batch)
+            processed += len(tag_batch)
+            if progress_cb:
+                progress_cb(processed)
 
     c.execute(
         "INSERT OR REPLACE INTO cache_meta (k, v) VALUES ('signature', ?)",
@@ -380,14 +478,25 @@ def _stored_signature(conn):
         return None
 
 
-def ensure_cache():
+def ensure_cache(progress_cb=None):
     """Idempotently make the cache match the current sources on disk. Rebuilds only on change."""
     sources = discover_sources()
+    sig = _signature(sources)
     with connect() as conn:
         _create_schema(conn)
-        if _stored_signature(conn) == _signature(sources):
+        if _stored_signature(conn) == sig:
             return
-        _rebuild(conn, sources)
+
+    # Only one rebuild at a time; concurrent callers keep serving the current cache.
+    if not _rebuild_lock.acquire(blocking=False):
+        return
+    try:
+        with connect() as conn:
+            if _stored_signature(conn) == sig:
+                return
+            _rebuild(conn, sources, progress_cb=progress_cb)
+    finally:
+        _rebuild_lock.release()
 
 
 # ---------------------------------------------------------------------------
@@ -513,29 +622,45 @@ _DOWNLOAD_CHUNK = 1 << 20  # 1 MiB
 _STALE_TAG_FILES = ("tags.jsonl", "tags.json", "tags.csv", "tags.sqlite", "tags.db")
 
 
-def _download_file(file_url, dest):
-    """Stream a URL to dest atomically via a .part temp file. Raises requests exceptions."""
+def _download_file(file_url, dest, progress_cb=None):
+    """Stream a URL to dest atomically via a .part temp file. Raises requests exceptions.
+
+    progress_cb(downloaded_bytes, total_bytes) is called as bytes arrive (total 0 if unknown).
+    """
     tmp = dest + ".part"
     try:
         with requests.get(file_url, stream=True, timeout=60) as r:
             r.raise_for_status()
+            total = int(r.headers.get("Content-Length") or 0)
+            downloaded = 0
+            if progress_cb:
+                progress_cb(downloaded, total)
             with open(tmp, "wb") as f:
                 for chunk in r.iter_content(chunk_size=_DOWNLOAD_CHUNK):
                     if chunk:
                         f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_cb:
+                            progress_cb(downloaded, total)
         os.replace(tmp, dest)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
 
 
-def download_preset(preset):
+def download_preset(preset, progress=None):
     """Download a preset's tag file into datasets/<local_dir>/tags.<fmt> and refresh the cache.
 
     Tries preset['files'] in order, using the first that resolves. Returns
     {id, name, source, format}. Raises ValueError for bad config / no available file and
     requests.RequestException for network failures.
+
+    If `progress` is a dict, it is updated live with phase/downloaded/total/imported.
     """
+    def upd(**kw):
+        if progress is not None:
+            progress.update(kw)
+
     repo = preset["repo"]
     datasets_dir = os.path.abspath(get_datasets_dir())
     dest_dir = os.path.abspath(os.path.join(datasets_dir, preset["local_dir"]))
@@ -549,6 +674,7 @@ def download_preset(preset):
         if os.path.exists(stale_path):
             os.remove(stale_path)
 
+    upd(phase="downloading", downloaded=0, total=0)
     chosen = None
     last_status = None
     for candidate in preset.get("files", []):
@@ -556,7 +682,10 @@ def download_preset(preset):
         file_url = f"https://huggingface.co/datasets/{repo}/resolve/main/{remote}"
         dest = os.path.join(dest_dir, f"tags.{fmt}")
         try:
-            _download_file(file_url, dest)
+            _download_file(
+                file_url, dest,
+                progress_cb=lambda d, tot: upd(downloaded=d, total=tot),
+            )
             chosen = (dest, fmt)
             break
         except requests.HTTPError as e:
@@ -577,13 +706,15 @@ def download_preset(preset):
         "format": fmt,
         "remote": os.path.basename(dest),
         "mapping": preset.get("mapping"),
+        "sqlite_query": preset.get("sqlite_query"),
         "downloaded_at": time.time(),
     }
     with open(os.path.join(dest_dir, _MANIFEST_NAME), "w", encoding="utf-8") as f:
         json.dump(manifest, f)
 
     # Rebuild the cache so the new dataset is immediately searchable.
-    ensure_cache()
+    upd(phase="importing", imported=0)
+    ensure_cache(progress_cb=lambda n: upd(imported=n))
 
     source_rel = os.path.relpath(dest, datasets_dir).replace(os.sep, "/")
     return {

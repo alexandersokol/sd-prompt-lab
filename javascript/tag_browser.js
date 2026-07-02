@@ -406,7 +406,9 @@
         const dialog = $(ids.dialog);
         const buttons = dialog ? dialog.querySelectorAll('button') : [];
         buttons.forEach((b) => (b.disabled = true));
-        if (btn) btn.textContent = 'Downloading…';
+
+        const ui = ensureProgressUi(rowEl);
+        if (btn) btn.textContent = 'Starting…';
         try {
             const res = await fetch(`${API}/tags/presets/download`, {
                 method: 'POST',
@@ -416,17 +418,102 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'Download failed');
 
-            await loadPresets();                 // refresh check marks / counts
-            state.source = data.source || '';
+            const result = await pollDownload(id, ui, btn);  // resolves when the job finishes
+
+            await loadPresets();                 // re-render with check mark / count (drops the bar)
+            state.source = result?.source || '';
             const hasData = await loadSources();  // toggles empty <-> browser
             if (hasData) resetAndLoad();
-            flashStatus(`Downloaded "${data.name}"`);
+            flashStatus(`Downloaded "${result?.name || id}"`);
         } catch (e) {
             flashStatus(`Error: ${e.message}`);
             if (btn) btn.textContent = 'Download';
+            if (ui.wrap) ui.wrap.remove();
         } finally {
             buttons.forEach((b) => (b.disabled = false));
         }
+    }
+
+    function ensureProgressUi(rowEl) {
+        const info = rowEl.querySelector('.spl-tags-preset-info');
+        let wrap = rowEl.querySelector('.spl-tags-preset-progress');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.className = 'spl-tags-preset-progress';
+            wrap.innerHTML =
+                '<div class="spl-tags-preset-track"><div class="spl-tags-preset-bar"></div></div>' +
+                '<div class="spl-tags-preset-pct"></div>';
+            info.appendChild(wrap);
+        }
+        return {
+            wrap,
+            bar: wrap.querySelector('.spl-tags-preset-bar'),
+            pct: wrap.querySelector('.spl-tags-preset-pct'),
+        };
+    }
+
+    function pollDownload(id, ui, btn) {
+        return new Promise((resolve, reject) => {
+            const tick = async () => {
+                let p;
+                try {
+                    const res = await fetch(
+                        `${API}/tags/presets/download/progress?id=${encodeURIComponent(id)}`);
+                    p = await res.json();
+                } catch (e) {
+                    setTimeout(tick, 700);  // transient network hiccup; keep polling
+                    return;
+                }
+                renderProgress(p, ui, btn);
+                if (p.done) {
+                    if (p.error) reject(new Error(p.error));
+                    else resolve(p.result);
+                    return;
+                }
+                setTimeout(tick, 500);
+            };
+            tick();
+        });
+    }
+
+    function renderProgress(p, ui, btn) {
+        const {bar, pct} = ui;
+        if (p.phase === 'downloading') {
+            const has = p.total > 0;
+            const ratio = has ? Math.min(1, p.downloaded / p.total) : 0;
+            if (bar) {
+                bar.classList.toggle('indeterminate', !has);
+                bar.style.width = has ? `${(ratio * 100).toFixed(1)}%` : '100%';
+            }
+            if (pct) {
+                pct.textContent = has
+                    ? `${fmtBytes(p.downloaded)} / ${fmtBytes(p.total)} · ${(ratio * 100).toFixed(0)}%`
+                    : `${fmtBytes(p.downloaded)} downloaded`;
+            }
+            if (btn) btn.textContent = 'Downloading…';
+        } else if (p.phase === 'importing') {
+            if (bar) {
+                bar.classList.add('indeterminate');
+                bar.style.width = '100%';
+            }
+            if (pct) {
+                pct.textContent = p.imported
+                    ? `Importing… ${Number(p.imported).toLocaleString()} tags`
+                    : 'Importing…';
+            }
+            if (btn) btn.textContent = 'Importing…';
+        } else if (p.phase === 'starting') {
+            if (pct) pct.textContent = 'Starting…';
+            if (btn) btn.textContent = 'Starting…';
+        }
+    }
+
+    function fmtBytes(n) {
+        n = Number(n) || 0;
+        if (n >= 1073741824) return `${(n / 1073741824).toFixed(2)} GB`;
+        if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+        if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+        return `${n} B`;
     }
 
     // ---- wiring --------------------------------------------------------------
