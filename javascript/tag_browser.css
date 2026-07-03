@@ -40,6 +40,56 @@
     border-radius: 4px;
 }
 
+/* ---- loading / index rebuild -------------------------------------------- */
+#sd-prompt-lab-tag-browser-root .spl-tags-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 64px 24px;
+    text-align: center;
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-spin {
+    font-size: 44px;
+    color: var(--spl-accent);
+    animation: spl-tags-spin 1s infinite linear;
+}
+@keyframes spl-tags-spin {
+    100% { transform: rotate(360deg); }
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--spl-text);
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-detail {
+    font-size: 13px;
+    max-width: 460px;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-track {
+    width: 320px;
+    max-width: 80%;
+    height: 6px;
+    margin-top: 6px;
+    border-radius: 999px;
+    background: var(--spl-panel-2);
+    overflow: hidden;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-bar {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--spl-accent);
+    transition: width 0.2s ease;
+}
+#sd-prompt-lab-tag-browser-root .spl-tags-loading-bar.indeterminate {
+    width: 40% !important;
+    background: linear-gradient(90deg, transparent, var(--spl-accent), transparent);
+    animation: spl-tags-indet 1.1s infinite linear;
+    transition: none;
+}
+
 /* ---- toolbar ------------------------------------------------------------ */
 #sd-prompt-lab-tag-browser-root .spl-tags-toolbar {
     display: flex;

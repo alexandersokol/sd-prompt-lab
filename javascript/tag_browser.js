@@ -10,6 +10,7 @@
         3: {label: 'Copyright', color: '#c56bff'},
         4: {label: 'Character', color: '#4ade80'},
         5: {label: 'Meta', color: '#f5b642'},
+        6: {label: 'Species', color: '#f472b6'},
     };
 
     const state = {
@@ -27,6 +28,8 @@
 
     const ids = {
         root: 'sd-prompt-lab-tag-browser-root',
+        loading: 'sd-prompt-lab-tags-loading',
+        loadingDetail: 'sd-prompt-lab-tags-loading-detail',
         empty: 'sd-prompt-lab-tags-empty',
         emptyRefresh: 'sd-prompt-lab-tags-empty-refresh',
         main: 'sd-prompt-lab-tags-main',
@@ -378,10 +381,11 @@
     }
 
     function presetRowHtml(p) {
+        const unit = p.kind === 'multi_source' ? 'sources' : 'tags';
         const status = p.downloaded
             ? `<span class="spl-tags-preset-status downloaded">
                    <span class="material-symbols-rounded">check_circle</span>
-                   Downloaded${p.count ? ` · ${p.count.toLocaleString()} tags` : ''}
+                   Downloaded${p.count ? ` · ${p.count.toLocaleString()} ${unit}` : ''}
                </span>`
             : '<span class="spl-tags-preset-status">Not downloaded</span>';
         const home = p.homepage
@@ -486,9 +490,16 @@
                 bar.style.width = has ? `${(ratio * 100).toFixed(1)}%` : '100%';
             }
             if (pct) {
-                pct.textContent = has
+                let text = has
                     ? `${fmtBytes(p.downloaded)} / ${fmtBytes(p.total)} · ${(ratio * 100).toFixed(0)}%`
                     : `${fmtBytes(p.downloaded)} downloaded`;
+                // Multi-source downloads report which file of how many is in flight.
+                if (p.files_total > 0) {
+                    const n = Math.min((p.files_done || 0) + 1, p.files_total);
+                    const label = p.label ? `${p.label} ` : '';
+                    text = `${label}(${n}/${p.files_total}) · ${text}`;
+                }
+                pct.textContent = text;
             }
             if (btn) btn.textContent = 'Downloading…';
         } else if (p.phase === 'importing') {
@@ -620,10 +631,76 @@
         }
 
         try {
+            await ensureCacheReady();
             const hasData = await loadSources();
             if (hasData) resetAndLoad();
         } catch (e) {
             setStatus(`Error: ${e.message}`);
+        }
+    }
+
+    function showLoading(show) {
+        const el = $(ids.loading);
+        if (el) el.hidden = !show;
+        if (show) {
+            // Keep the other panels hidden so only the progress banner is visible.
+            const empty = $(ids.empty);
+            const main = $(ids.main);
+            if (empty) empty.hidden = true;
+            if (main) main.hidden = true;
+        }
+    }
+
+    function setLoadingDetail(text) {
+        const el = $(ids.loadingDetail);
+        if (el) el.textContent = text;
+    }
+
+    // When the on-disk datasets changed (e.g. site_tags was just downloaded), build the
+    // index in the background with a visible progress banner instead of hanging the first
+    // /tags/sources call (which would leave the tab blank while it imports).
+    async function ensureCacheReady() {
+        let status;
+        try {
+            const res = await fetch(`${API}/tags/cache/status`);
+            status = await res.json();
+        } catch (e) {
+            return;  // fall back to the lazy import inside loadSources
+        }
+        if (!status || !status.needs_rebuild) return;
+
+        showLoading(true);
+        setLoadingDetail('Preparing your tag datasets. This can take a few minutes the first time.');
+        try {
+            await fetch(`${API}/tags/cache/rebuild`, {method: 'POST'});
+        } catch (e) {
+            showLoading(false);
+            return;  // rebuild will still happen lazily on the next read
+        }
+        try {
+            await new Promise((resolve) => {
+                const tick = async () => {
+                    let p;
+                    try {
+                        const res = await fetch(`${API}/tags/cache/rebuild/progress`);
+                        p = await res.json();
+                    } catch (e) {
+                        setTimeout(tick, 800);
+                        return;
+                    }
+                    if (p.error) {
+                        setLoadingDetail(`Error: ${p.error}`);
+                    } else if (p.imported) {
+                        setLoadingDetail(
+                            `Imported ${Number(p.imported).toLocaleString()} tags so far…`);
+                    }
+                    if (p.done) { resolve(); return; }
+                    setTimeout(tick, 500);
+                };
+                tick();
+            });
+        } finally {
+            showLoading(false);
         }
     }
 

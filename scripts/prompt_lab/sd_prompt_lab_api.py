@@ -19,6 +19,11 @@ import scripts.prompt_lab.sd_promt_lab_env as env
 _download_jobs = {}
 _download_jobs_lock = threading.Lock()
 
+# Single background cache-rebuild job (see the cache rebuild routes). A big first import
+# (e.g. after adding the site_tags dataset) runs here with progress instead of blocking a read.
+_rebuild_job = {"phase": "idle", "imported": 0, "done": True, "error": None}
+_rebuild_job_lock = threading.Lock()
+
 
 # Pydantic model for input validation
 class PromptData(BaseModel):
@@ -253,6 +258,36 @@ def init_api(app: FastAPI):
         if not job:
             return {"phase": "idle", "done": True}
         return dict(job)
+
+    # Cache rebuild is exposed so the UI can run a large first import (e.g. site_tags) in the
+    # background with progress, rather than blocking a plain /tags/sources read for minutes.
+    @app.get("/sd-prompt-lab/tags/cache/status")
+    def tags_cache_status():
+        try:
+            return tags_db.cache_status()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/sd-prompt-lab/tags/cache/rebuild")
+    def tags_cache_rebuild():
+        with _rebuild_job_lock:
+            if not _rebuild_job.get("done", True):
+                return {"status": "already_running"}
+            _rebuild_job.update(phase="importing", imported=0, done=False, error=None)
+
+        def run():
+            try:
+                tags_db.ensure_cache(progress_cb=lambda n: _rebuild_job.update(imported=n))
+                _rebuild_job.update(phase="done", done=True)
+            except Exception as e:
+                _rebuild_job.update(phase="error", done=True, error=str(e))
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"status": "started"}
+
+    @app.get("/sd-prompt-lab/tags/cache/rebuild/progress")
+    def tags_cache_rebuild_progress():
+        return dict(_rebuild_job)
 
     @app.get("/sd-prompt-lab/tags/detail")
     async def get_tag_detail(name: str = Query(...)):

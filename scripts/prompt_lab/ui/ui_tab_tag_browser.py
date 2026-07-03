@@ -4,6 +4,17 @@ import gradio as gr
 def ui_tab_tag_browser():
     gr.HTML("""
         <div id="sd-prompt-lab-tag-browser-root" class="spl-tags">
+            <div id="sd-prompt-lab-tags-loading" class="spl-tags-loading" hidden>
+                <span class="material-symbols-rounded spl-tags-loading-spin" aria-hidden="true">progress_activity</span>
+                <div class="spl-tags-loading-title">Building tag index…</div>
+                <div id="sd-prompt-lab-tags-loading-detail" class="spl-tags-loading-detail">
+                    Preparing your tag datasets. This can take a few minutes the first time.
+                </div>
+                <div class="spl-tags-loading-track">
+                    <div id="sd-prompt-lab-tags-loading-bar" class="spl-tags-loading-bar indeterminate"></div>
+                </div>
+            </div>
+
             <div id="sd-prompt-lab-tags-empty" class="spl-tags-empty" hidden>
                 <span class="material-symbols-rounded" aria-hidden="true">database</span>
                 <div class="spl-tags-empty-title">No datasets added yet</div>

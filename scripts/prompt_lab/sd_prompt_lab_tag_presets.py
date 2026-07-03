@@ -49,9 +49,16 @@ LEFT JOIN (
 #   local_dir   - datasets/<local_dir>/ where the tag file is stored
 #   files       - ordered candidate files; the first that resolves (HTTP 200) is downloaded.
 #                 Each: {"remote": <path in repo>, "format": "jsonl"|"json"|"csv"}
+#                 For a "multi_source" preset, "remote" is the file name looked for inside
+#                 each source subdirectory (not a full repo path).
 #   mapping     - optional {canonical_field: source_key} for datasets whose columns/keys
 #                 differ from our schema (name/post_count/category/is_deprecated/words).
 #                 None means use the default field detection.
+#   kind        - optional. "multi_source" means the repo holds many <source>/<file> tag
+#                 dumps; every top-level directory is downloaded to
+#                 datasets/<local_dir>/<source>/tags.<fmt>. Absent = a single tag file.
+#   import      - optional, default True. False marks a dataset as download-only: its files
+#                 are fetched but not yet ingested into the browsing cache.
 PRESETS = [
     {
         "id": "danbooru-tags",
@@ -80,6 +87,25 @@ PRESETS = [
         "mapping": None,
         # Normalized schema -> flat tag rows are produced by this query at import time.
         "sqlite_query": _GENAI_TAG_DB_QUERY,
+    },
+    {
+        "id": "site-tags",
+        "name": "Booru Site Tags (deepghs)",
+        "description": "Raw per-site tag dumps for ~18 boorus/sites (Danbooru, e621, Gelbooru, "
+                       "Konachan, yande.re, …). Downloaded as-is per source; browsing support "
+                       "is added later. Large download (~1 GB+).",
+        "homepage": "https://huggingface.co/datasets/deepghs/site_tags",
+        "repo": "deepghs/site_tags",
+        "local_dir": "site_tags",
+        "kind": "multi_source",
+        # Per-source candidate file names, in preference order (jsonl if present, else json).
+        "files": [
+            {"remote": "tags.jsonl", "format": "jsonl"},
+            {"remote": "tags.json", "format": "json"},
+        ],
+        "mapping": None,
+        # Download-only for now: files are fetched but not ingested into the browsing cache.
+        "import": False,
     },
 ]
 

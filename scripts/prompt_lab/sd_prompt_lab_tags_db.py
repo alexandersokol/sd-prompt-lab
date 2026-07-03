@@ -9,6 +9,7 @@ import requests
 
 import scripts.prompt_lab.sd_promt_lab_env as env
 import scripts.prompt_lab.sd_prompt_lab_tag_presets as presets_registry
+import scripts.prompt_lab.sd_prompt_lab_site_tags as site_tags
 
 # Serializes cache rebuilds so a background download's import can't race concurrent readers.
 _rebuild_lock = threading.Lock()
@@ -74,9 +75,20 @@ def discover_sources():
         # Never descend into the cache directory.
         dirs[:] = [d for d in dirs if d != _CACHE_DIR_NAME]
 
+        # An optional sibling manifest records how the dataset should be interpreted.
+        manifest, manifest_mtime = _read_manifest(root)
+        # Multi-source site_tags dirs are normalized per-site by a dedicated adapter.
+        rel_dir = os.path.relpath(root, datasets_dir).replace(os.sep, "/")
+        transform = site_tags.adapter_for_dir(rel_dir)
+        # Download-only datasets (import: false) are skipped until a transform can read them.
+        if manifest.get("import") is False and transform is None:
+            continue
+
         # Group candidate files by base name so richer formats shadow weaker ones in the same folder.
         by_base = {}
         for name in files:
+            if name == _MANIFEST_NAME:
+                continue  # the dataset manifest is metadata, not a tag source
             base, ext = os.path.splitext(name)
             ext = ext.lower()
             if ext not in _SOURCE_EXTS:
@@ -99,9 +111,6 @@ def discover_sources():
                 continue
             rel = os.path.relpath(abspath, datasets_dir).replace(os.sep, "/")
 
-            # An optional sibling manifest records how the dataset should be interpreted.
-            manifest, manifest_mtime = _read_manifest(root)
-
             sources.append({
                 "source": rel,
                 "abspath": abspath,
@@ -110,6 +119,7 @@ def discover_sources():
                 "size": stat.st_size,
                 "mapping": manifest.get("mapping"),
                 "sqlite_query": manifest.get("sqlite_query"),
+                "transform": transform,
                 "manifest_mtime": manifest_mtime,
             })
 
@@ -430,9 +440,14 @@ def _rebuild(conn, sources, progress_cb=None):
     for source in sources:
         source_name = source["source"]
         mapping = source.get("mapping")
+        transform = source.get("transform")
         tag_batch = []
         src_batch = []
         for record in _iter_records(source):
+            if transform is not None:
+                record = transform(record)
+                if record is None:
+                    continue
             record = _apply_mapping(record, mapping)
             normalized = _normalize(record)
             if normalized is None:
@@ -476,6 +491,19 @@ def _stored_signature(conn):
         return row[0] if row else None
     except sqlite3.OperationalError:
         return None
+
+
+def cache_status():
+    """Report whether the cache is stale vs. on-disk sources, without triggering a rebuild.
+
+    Lets the UI kick off a big rebuild with progress instead of blocking on a lazy import.
+    """
+    sources = discover_sources()
+    sig = _signature(sources)
+    with connect() as conn:
+        _create_schema(conn)
+        stored = _stored_signature(conn)
+    return {"needs_rebuild": stored != sig, "source_count": len(sources)}
 
 
 def ensure_cache(progress_cb=None):
@@ -620,6 +648,14 @@ def get_tag_detail(name):
 _DOWNLOAD_CHUNK = 1 << 20  # 1 MiB
 # Local tag files a re-download must clear so a new format can't be shadowed by an old one.
 _STALE_TAG_FILES = ("tags.jsonl", "tags.json", "tags.csv", "tags.sqlite", "tags.db")
+# Hugging Face datasets API (used to enumerate a multi-source repo's directories).
+_HF_DATASETS_API = "https://huggingface.co/api/datasets"
+
+
+def _write_manifest(directory, manifest):
+    """Write a dataset's .spl-dataset.json describing how it was produced / interpreted."""
+    with open(os.path.join(directory, _MANIFEST_NAME), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
 
 
 def _download_file(file_url, dest, progress_cb=None):
@@ -657,6 +693,9 @@ def download_preset(preset, progress=None):
 
     If `progress` is a dict, it is updated live with phase/downloaded/total/imported.
     """
+    if preset.get("kind") == "multi_source":
+        return _download_multi_source(preset, progress=progress)
+
     def upd(**kw):
         if progress is not None:
             progress.update(kw)
@@ -701,16 +740,14 @@ def download_preset(preset, progress=None):
     dest, fmt = chosen
 
     # Persist how this dataset was produced and how to interpret it.
-    manifest = {
+    _write_manifest(dest_dir, {
         "preset_id": preset["id"],
         "format": fmt,
         "remote": os.path.basename(dest),
         "mapping": preset.get("mapping"),
         "sqlite_query": preset.get("sqlite_query"),
         "downloaded_at": time.time(),
-    }
-    with open(os.path.join(dest_dir, _MANIFEST_NAME), "w", encoding="utf-8") as f:
-        json.dump(manifest, f)
+    })
 
     # Rebuild the cache so the new dataset is immediately searchable.
     upd(phase="importing", imported=0)
@@ -725,21 +762,141 @@ def download_preset(preset, progress=None):
     }
 
 
+def _hf_list_dirs(repo):
+    """Return the sorted top-level directory names of a Hugging Face dataset repo."""
+    url = f"{_HF_DATASETS_API}/{repo}/tree/main"
+    with requests.get(url, timeout=60) as r:
+        r.raise_for_status()
+        entries = r.json()
+    dirs = [e["path"] for e in entries if isinstance(e, dict) and e.get("type") == "directory"]
+    return sorted(dirs)
+
+
+def _download_multi_source(preset, progress=None):
+    """Download every <source>/tags.<fmt> in a multi-source repo as-is (no import yet).
+
+    Enumerates the repo's top-level directories and, for each, downloads the first
+    matching candidate file into datasets/<local_dir>/<source>/tags.<fmt> with an
+    import-disabled manifest. Returns {id, name, source, format, sources}.
+    """
+    def upd(**kw):
+        if progress is not None:
+            progress.update(kw)
+
+    repo = preset["repo"]
+    datasets_dir = os.path.abspath(get_datasets_dir())
+    dest_root = os.path.abspath(os.path.join(datasets_dir, preset["local_dir"]))
+    if os.path.commonpath([datasets_dir, dest_root]) != datasets_dir:
+        raise ValueError("Invalid preset local_dir")
+    os.makedirs(dest_root, exist_ok=True)
+
+    upd(phase="downloading", downloaded=0, total=0, files_done=0, files_total=0, label="")
+    dirs = _hf_list_dirs(repo)
+    upd(files_total=len(dirs))
+
+    downloaded_sources = []
+    for i, sub in enumerate(dirs):
+        source_name = sub.split("/")[-1]
+        upd(label=source_name, files_done=i, downloaded=0, total=0)
+
+        dest_dir = os.path.abspath(os.path.join(dest_root, source_name))
+        if os.path.commonpath([dest_root, dest_dir]) != dest_root:
+            continue  # guard against traversal via an unexpected directory name
+
+        chosen = None
+        for candidate in preset.get("files", []):
+            remote, fmt = candidate["remote"], candidate["format"]
+            file_url = f"https://huggingface.co/datasets/{repo}/resolve/main/{sub}/{remote}"
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, f"tags.{fmt}")
+            try:
+                _download_file(
+                    file_url, dest,
+                    progress_cb=lambda d, tot: upd(downloaded=d, total=tot),
+                )
+                chosen = (dest, fmt, remote)
+                break
+            except requests.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+                if status in (401, 403, 404):
+                    continue  # this source lacks that format; try the next candidate
+                raise
+
+        if not chosen:
+            continue  # no candidate file present for this source; skip it
+
+        dest, fmt, remote = chosen
+        # Replace semantics: drop any other tag format left in this source dir.
+        for stale in _STALE_TAG_FILES:
+            stale_path = os.path.join(dest_dir, stale)
+            if stale_path != dest and os.path.exists(stale_path):
+                os.remove(stale_path)
+
+        _write_manifest(dest_dir, {
+            "preset_id": preset["id"],
+            "format": fmt,
+            "remote": remote,
+            "mapping": preset.get("mapping"),
+            "downloaded_at": time.time(),
+        })
+        downloaded_sources.append(source_name)
+
+    upd(files_done=len(dirs), label="")
+
+    if not downloaded_sources:
+        raise ValueError(f"No tag files were found in '{repo}'")
+
+    # Per-site adapters normalize these on import; rebuild so they're immediately searchable.
+    upd(phase="importing", imported=0)
+    ensure_cache(progress_cb=lambda n: upd(imported=n))
+
+    return {
+        "id": preset["id"],
+        "name": preset.get("name", preset["id"]),
+        "source": "",  # merged across many sites; nothing single to focus in the browser
+        "format": "multi",
+        "sources": downloaded_sources,
+    }
+
+
+def _count_downloaded_sources(root):
+    """Count immediate subdirectories of `root` that hold a downloaded tag file."""
+    if not os.path.isdir(root):
+        return 0
+    count = 0
+    for name in os.listdir(root):
+        sub = os.path.join(root, name)
+        if not os.path.isdir(sub):
+            continue
+        if any(os.path.exists(os.path.join(sub, "tags" + ext)) for ext in _SOURCE_EXT_ORDER):
+            count += 1
+    return count
+
+
 def presets_status():
     """Return each registered preset with whether it is downloaded and its cached tag count."""
     ensure_cache()
     sources = list_sources()
+    datasets_dir = get_datasets_dir()
     result = []
     for preset in presets_registry.list_presets():
-        prefix = preset["local_dir"].rstrip("/") + "/"
-        matched = [s for s in sources if s["source"].startswith(prefix)]
-        result.append({
+        local_dir = preset["local_dir"].rstrip("/")
+        entry = {
             "id": preset["id"],
             "name": preset["name"],
             "description": preset.get("description", ""),
             "homepage": preset.get("homepage", ""),
             "repo": preset.get("repo", ""),
-            "downloaded": bool(matched),
-            "count": sum(s["count"] for s in matched),
-        })
+            "kind": preset.get("kind", "single"),
+        }
+        if preset.get("kind") == "multi_source":
+            # Not ingested into the cache; report on-disk source directories instead.
+            downloaded = _count_downloaded_sources(os.path.join(datasets_dir, local_dir))
+            entry["downloaded"] = downloaded > 0
+            entry["count"] = downloaded
+        else:
+            matched = [s for s in sources if s["source"].startswith(local_dir + "/")]
+            entry["downloaded"] = bool(matched)
+            entry["count"] = sum(s["count"] for s in matched)
+        result.append(entry)
     return result
