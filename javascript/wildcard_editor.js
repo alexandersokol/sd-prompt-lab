@@ -245,9 +245,18 @@ const sdPromptLabWildcardEditor = (() => {
         renderTree();
     }
 
+    function normalizeTreePaths(nodes) {
+        (nodes || []).forEach(node => {
+            node.path = normalizePath(node.path);
+            if (node.children) normalizeTreePaths(node.children);
+        });
+        return nodes;
+    }
+
     async function loadTree() {
         const data = await requestJson('/sd-prompt-lab/wildcards/editor/tree');
-        state.tree = data.tree || [];
+        // Always present paths with forward slashes regardless of the server OS.
+        state.tree = normalizeTreePaths(data.tree || []);
         renderTree();
     }
 

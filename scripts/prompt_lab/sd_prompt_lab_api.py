@@ -65,6 +65,11 @@ def _resolve_wildcard_path(path: str, allow_root: bool = False):
     return candidate
 
 
+def _rel_posix(abs_path):
+    # Relative path with forward slashes so the UI stays consistent across OSes.
+    return os.path.relpath(abs_path, _wildcards_root()).replace(os.sep, "/")
+
+
 def _build_wildcards_editor_tree(directory, base=""):
     result = []
     if not os.path.isdir(directory):
@@ -72,7 +77,8 @@ def _build_wildcards_editor_tree(directory, base=""):
 
     entries = sorted(os.scandir(directory), key=lambda e: (not e.is_dir(), e.name.lower()))
     for entry in entries:
-        path = os.path.join(base, entry.name)
+        # Always use forward slashes so the UI shows/copies "/" on every OS.
+        path = f"{base}/{entry.name}" if base else entry.name
         if entry.is_dir():
             result.append({
                 "name": entry.name,
@@ -388,7 +394,7 @@ def init_api(app: FastAPI):
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write("")
-            return {"status": "ok", "path": os.path.relpath(abs_path, _wildcards_root())}
+            return {"status": "ok", "path": _rel_posix(abs_path)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -400,7 +406,7 @@ def init_api(app: FastAPI):
 
         try:
             os.makedirs(abs_path, exist_ok=False)
-            return {"status": "ok", "path": os.path.relpath(abs_path, _wildcards_root())}
+            return {"status": "ok", "path": _rel_posix(abs_path)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -417,7 +423,7 @@ def init_api(app: FastAPI):
         try:
             os.makedirs(os.path.dirname(new_path), exist_ok=True)
             shutil.move(old_path, new_path)
-            return {"status": "ok", "path": os.path.relpath(new_path, _wildcards_root())}
+            return {"status": "ok", "path": _rel_posix(new_path)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
