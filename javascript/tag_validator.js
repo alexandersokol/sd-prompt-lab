@@ -172,6 +172,7 @@
         modeTags: 'spl-tv-mode-tags',
         modeText: 'spl-tv-mode-text',
         cleanup: 'spl-tv-cleanup',
+        refine: 'spl-tv-refine',
         approve: 'spl-tv-approve',
         approveLabel: 'spl-tv-approve-label',
         removeCard: 'spl-tv-remove-card',
@@ -259,10 +260,9 @@
         return state.cards.find((c) => c.id === state.activeId) || null;
     }
 
-    function chipStatus(key, card) {
+    function chipStatus(key) {
         if (state.tags[key] === 'declined') return 'declined';
         if (state.tags[key] === 'approved') return 'approved';
-        if (card && card.approved) return 'approved';
         return 'neutral';
     }
 
@@ -347,7 +347,7 @@
             return;
         }
         el.innerHTML = segs.map((seg, i) => {
-            const status = chipStatus(tagKey(seg), card);
+            const status = chipStatus(tagKey(seg));
             return `
                 <span class="spl-tv-chip is-${status}" data-index="${i}">
                     <span class="spl-tv-chip-text">${escapeHtml(seg)}</span>
@@ -509,21 +509,17 @@
     async function toggleApprove() {
         const card = activeCard();
         if (!card) return;
-        const segs = tokenize(card.text);
-        if (card.approved) {
-            await patchCard(card, {approved: false});
-            for (const seg of segs) {
-                const key = tagKey(seg);
-                if (state.tags[key] === 'approved') await setTag(key, 'none');
-            }
-        } else {
-            await patchCard(card, {approved: true});
-            for (const seg of segs) {
-                const key = tagKey(seg);
-                if (state.tags[key] !== 'declined') await setTag(key, 'approved');
-            }
-        }
+        // Approval is a card-level flag only; it never changes tag verdicts.
+        await patchCard(card, {approved: !card.approved});
         renderAll();
+    }
+
+    function syncEditorDoc(text) {
+        if (state.mode === 'text' && state.editor) {
+            state.silentChange = true;
+            window.setSdPromptLabEditorDocument(state.editor, text);
+            state.silentChange = false;
+        }
     }
 
     async function cleanupActive() {
@@ -531,11 +527,19 @@
         if (!card) return;
         const cleaned = purge(card.text);
         await patchCard(card, {text: cleaned});
-        if (state.mode === 'text' && state.editor) {
-            state.silentChange = true;
-            window.setSdPromptLabEditorDocument(state.editor, cleaned);
-            state.silentChange = false;
-        }
+        syncEditorDoc(cleaned);
+        renderCards();
+        renderMain();
+    }
+
+    async function refineActive() {
+        const card = activeCard();
+        if (!card) return;
+        // Drop every tag that is globally declined from this card.
+        const kept = tokenize(card.text).filter((seg) => state.tags[tagKey(seg)] !== 'declined');
+        const refined = kept.join(', ');
+        await patchCard(card, {text: refined});
+        syncEditorDoc(refined);
         renderCards();
         renderMain();
     }
@@ -663,6 +667,7 @@
         $(ids.modeTags)?.addEventListener('click', () => setMode('tags'));
         $(ids.modeText)?.addEventListener('click', () => setMode('text'));
         $(ids.cleanup)?.addEventListener('click', () => cleanupActive().catch((e) => console.error(e)));
+        $(ids.refine)?.addEventListener('click', () => refineActive().catch((e) => console.error(e)));
         $(ids.approve)?.addEventListener('click', () => toggleApprove().catch((e) => console.error(e)));
 
         $(ids.removeCard)?.addEventListener('click', () => {

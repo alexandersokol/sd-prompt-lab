@@ -329,8 +329,6 @@
     background: rgba(248, 113, 113, 0.16);
     border-color: var(--spl-red);
     color: #ffe0e0;
-    text-decoration: line-through;
-    opacity: 0.85;
 }
 #sd-prompt-lab-tag-validator-root .spl-tv-chip-text {
     overflow: hidden;

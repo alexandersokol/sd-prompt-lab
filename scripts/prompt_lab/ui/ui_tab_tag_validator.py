@@ -45,6 +45,10 @@ def ui_tab_tag_validator():
                         <span class="material-symbols-rounded" aria-hidden="true">mop</span>
                         <span>Clean-up</span>
                     </button>
+                    <button id="spl-tv-refine" class="spl-tv-btn" title="Remove all declined tags from this prompt">
+                        <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
+                        <span>Refine</span>
+                    </button>
                     <button id="spl-tv-approve" class="spl-tv-btn spl-tv-btn-approve" title="Approve this card">
                         <span class="material-symbols-rounded" aria-hidden="true">check</span>
                         <span id="spl-tv-approve-label">Approve</span>
