@@ -159,6 +159,7 @@
         mode: 'tags',       // 'tags' | 'text'
         editor: null,
         silentChange: false,
+        history: {undo: [], redo: []},   // tag-mode edit snapshots
     };
 
     const ids = {
@@ -171,6 +172,8 @@
         cardControls: 'spl-tv-card-controls',
         modeTags: 'spl-tv-mode-tags',
         modeText: 'spl-tv-mode-text',
+        undo: 'spl-tv-undo',
+        redo: 'spl-tv-redo',
         cleanup: 'spl-tv-cleanup',
         refine: 'spl-tv-refine',
         approve: 'spl-tv-approve',
@@ -303,6 +306,73 @@
         }
     }
 
+    // ---- undo / redo history (tag-mode edits) ---------------------------
+
+    function snapshot() {
+        return {
+            cards: state.cards.map((c) => ({id: c.id, text: c.text, approved: c.approved})),
+            tags: {...state.tags},
+        };
+    }
+
+    // Record the current state before an undoable tag-mode edit.
+    function pushHistory() {
+        state.history.undo.push(snapshot());
+        state.history.redo = [];
+        updateUndoRedoButtons();
+    }
+
+    // Drop the history after any change that is not an undoable tag edit
+    // (import, clear, card delete/approve, text-mode editing).
+    function clearHistory() {
+        state.history.undo = [];
+        state.history.redo = [];
+        updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+        const u = $(ids.undo);
+        const r = $(ids.redo);
+        if (u) u.disabled = state.history.undo.length === 0;
+        if (r) r.disabled = state.history.redo.length === 0;
+    }
+
+    async function restoreSnapshot(snap) {
+        for (const sc of snap.cards) {
+            const cur = state.cards.find((c) => c.id === sc.id);
+            if (!cur) continue;
+            const fields = {};
+            if (cur.text !== sc.text) fields.text = sc.text;
+            if (cur.approved !== sc.approved) fields.approved = !!sc.approved;
+            if (Object.keys(fields).length) await patchCard(cur, fields);
+        }
+        const curKeys = Object.keys(state.tags);
+        for (const [k, v] of Object.entries(snap.tags)) {
+            if (state.tags[k] !== v) await setTag(k, v);
+        }
+        for (const k of curKeys) {
+            if (!(k in snap.tags)) await setTag(k, 'none');
+        }
+    }
+
+    async function undo() {
+        if (state.history.undo.length === 0) return;
+        state.history.redo.push(snapshot());
+        const snap = state.history.undo.pop();
+        await restoreSnapshot(snap);
+        updateUndoRedoButtons();
+        renderAll();
+    }
+
+    async function redo() {
+        if (state.history.redo.length === 0) return;
+        state.history.undo.push(snapshot());
+        const snap = state.history.redo.pop();
+        await restoreSnapshot(snap);
+        updateUndoRedoButtons();
+        renderAll();
+    }
+
     // ---- rendering -------------------------------------------------------
 
     function renderCounts() {
@@ -420,6 +490,14 @@
         renderApproveButton();
         renderIssues();
 
+        // Undo/redo apply to Tag mode only; hide them in Text mode (CodeMirror
+        // provides its own native undo there).
+        const undoBtn = $(ids.undo);
+        const redoBtn = $(ids.redo);
+        if (undoBtn) undoBtn.hidden = state.mode !== 'tags';
+        if (redoBtn) redoBtn.hidden = state.mode !== 'tags';
+        updateUndoRedoButtons();
+
         if (state.mode === 'text') {
             if (chips) chips.hidden = true;
             if (textHost) textHost.hidden = false;
@@ -466,6 +544,7 @@
                     const card = activeCard();
                     if (!card) return;
                     card.text = doc;
+                    clearHistory();   // text-mode edits are outside the tag-edit history
                     renderIssues();
                     renderCards();
                     scheduleSave(card);
@@ -498,6 +577,7 @@
         const segs = tokenize(card.text);
         const key = tagKey(segs[index] || '');
         if (!key) return;
+        pushHistory();
         await setTag(key, 'approved');   // explicit override, even if declined
         renderCounts();
         renderChips();
@@ -510,6 +590,7 @@
         const segs = tokenize(card.text);
         const key = tagKey(segs[index] || '');
         const wasApproved = state.tags[key] === 'approved';
+        pushHistory();
         const newText = removeSegment(card.text, index);
         await patchCard(card, {text: newText});
         // An approved tag is only dropped from this card; it keeps its approval
@@ -527,6 +608,7 @@
         if (!card) return;
         // Approval is a card-level flag only; it never changes tag verdicts.
         await patchCard(card, {approved: !card.approved});
+        clearHistory();
         renderAll();
     }
 
@@ -541,6 +623,7 @@
     async function cleanupActive() {
         const card = activeCard();
         if (!card) return;
+        pushHistory();
         const cleaned = purge(card.text);
         await patchCard(card, {text: cleaned});
         await pruneOrphanApprovedTags();
@@ -553,6 +636,7 @@
     async function refineActive() {
         const card = activeCard();
         if (!card) return;
+        pushHistory();
         // Drop every tag that is globally declined from this card.
         const kept = tokenize(card.text).filter((seg) => state.tags[tagKey(seg)] !== 'declined');
         const refined = kept.join(', ');
@@ -592,6 +676,7 @@
         const data = await api('/cards', jsonBody({texts}));
         const created = data.cards || [];
         state.cards.push(...created);
+        clearHistory();
         renderCards();
         if (created.length > 0) selectCard(created[0].id);
     }
@@ -639,6 +724,7 @@
         state.cards = [];
         state.tags = {};
         state.activeId = null;
+        clearHistory();
         renderAll();
     }
 
@@ -649,6 +735,7 @@
         await api(`/cards/${card.id}`, {method: 'DELETE'});
         state.cards = state.cards.filter((c) => c.id !== card.id);
         await pruneOrphanApprovedTags();
+        clearHistory();
         // Reset the main pane to its initial (no card selected) state.
         state.activeId = null;
         renderAll();
@@ -687,6 +774,8 @@
 
         $(ids.modeTags)?.addEventListener('click', () => setMode('tags'));
         $(ids.modeText)?.addEventListener('click', () => setMode('text'));
+        $(ids.undo)?.addEventListener('click', () => undo().catch((e) => console.error(e)));
+        $(ids.redo)?.addEventListener('click', () => redo().catch((e) => console.error(e)));
         $(ids.cleanup)?.addEventListener('click', () => cleanupActive().catch((e) => console.error(e)));
         $(ids.refine)?.addEventListener('click', () => refineActive().catch((e) => console.error(e)));
         $(ids.approve)?.addEventListener('click', () => toggleApprove().catch((e) => console.error(e)));
@@ -717,6 +806,30 @@
                 onChipRemove(Number(removeBtn.dataset.index)).catch((err) => console.error(err));
             }
         });
+
+        document.addEventListener('keydown', onKeydown);
+    }
+
+    // System undo/redo shortcuts, active only while the Tag Validator tab is
+    // visible, a card is open, and we're in Tag mode (Text mode leaves undo to
+    // CodeMirror). Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Ctrl+Y = redo.
+    function onKeydown(e) {
+        const root = $(ids.root);
+        if (!root || root.offsetParent === null) return;   // tab not visible
+        if (state.mode !== 'tags' || !activeCard()) return;
+        if (!(e.metaKey || e.ctrlKey)) return;
+        const target = e.target;
+        const tag = target && target.tagName;
+        if (tag === 'TEXTAREA' || tag === 'INPUT'
+            || (target && target.closest && target.closest('.cm-editor'))) return;
+        const key = (e.key || '').toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            undo().catch((err) => console.error(err));
+        } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+            e.preventDefault();
+            redo().catch((err) => console.error(err));
+        }
     }
 
     async function loadState() {
@@ -728,6 +841,7 @@
         // Enforce the "approved only while present in a card" invariant on load,
         // in case a stale approved verdict persisted from an earlier session.
         await pruneOrphanApprovedTags();
+        clearHistory();
         renderAll();
     }
 

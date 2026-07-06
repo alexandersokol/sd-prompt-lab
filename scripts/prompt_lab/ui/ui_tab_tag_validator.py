@@ -31,6 +31,12 @@ def ui_tab_tag_validator():
                 </div>
 
                 <div id="spl-tv-card-controls" class="spl-tv-toolbar-right" hidden>
+                    <button id="spl-tv-undo" class="spl-tv-btn spl-tv-btn-icon" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo" disabled>
+                        <span class="material-symbols-rounded" aria-hidden="true">undo</span>
+                    </button>
+                    <button id="spl-tv-redo" class="spl-tv-btn spl-tv-btn-icon" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo" disabled>
+                        <span class="material-symbols-rounded" aria-hidden="true">redo</span>
+                    </button>
                     <div class="spl-tv-mode-switch" role="tablist">
                         <button id="spl-tv-mode-tags" class="spl-tv-mode-btn is-active" role="tab">
                             <span class="material-symbols-rounded" aria-hidden="true">sell</span>

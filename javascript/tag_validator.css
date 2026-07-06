@@ -76,6 +76,17 @@
     border-color: var(--spl-green);
     color: #0b1f12;
 }
+#sd-prompt-lab-tag-validator-root .spl-tv-btn-icon {
+    padding: 6px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-btn:disabled:hover {
+    border-color: var(--spl-border);
+    background: var(--spl-panel-2);
+}
 
 /* counts */
 #sd-prompt-lab-tag-validator-root .spl-tv-counts {
