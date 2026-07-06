@@ -725,6 +725,9 @@
         state.tags = {};
         for (const t of (data.tags || [])) state.tags[t.name] = t.status;
         if (!state.cards.some((c) => c.id === state.activeId)) state.activeId = null;
+        // Enforce the "approved only while present in a card" invariant on load,
+        // in case a stale approved verdict persisted from an earlier session.
+        await pruneOrphanApprovedTags();
         renderAll();
     }
 
