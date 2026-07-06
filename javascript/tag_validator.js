@@ -288,6 +288,21 @@
         });
     }
 
+    function anyCardHasTag(key) {
+        return state.cards.some((c) => tokenize(c.text).some((seg) => tagKey(seg) === key));
+    }
+
+    // An approved verdict only lives while the tag still exists in some card.
+    // Once no card contains it, the tag reverts to regular (declined verdicts
+    // persist as filters and are left untouched).
+    async function pruneOrphanApprovedTags() {
+        for (const key of Object.keys(state.tags)) {
+            if (state.tags[key] === 'approved' && !anyCardHasTag(key)) {
+                await setTag(key, 'none');
+            }
+        }
+    }
+
     // ---- rendering -------------------------------------------------------
 
     function renderCounts() {
@@ -498,8 +513,9 @@
         const newText = removeSegment(card.text, index);
         await patchCard(card, {text: newText});
         // An approved tag is only dropped from this card; it keeps its approval
-        // (it may be approved via other cards). Otherwise removal declines it.
+        // while it still exists in some card. Otherwise removal declines it.
         if (key && !wasApproved) await setTag(key, 'declined');
+        await pruneOrphanApprovedTags();
         renderCounts();
         renderChips();
         renderCards();
@@ -527,7 +543,9 @@
         if (!card) return;
         const cleaned = purge(card.text);
         await patchCard(card, {text: cleaned});
+        await pruneOrphanApprovedTags();
         syncEditorDoc(cleaned);
+        renderCounts();
         renderCards();
         renderMain();
     }
@@ -539,7 +557,9 @@
         const kept = tokenize(card.text).filter((seg) => state.tags[tagKey(seg)] !== 'declined');
         const refined = kept.join(', ');
         await patchCard(card, {text: refined});
+        await pruneOrphanApprovedTags();
         syncEditorDoc(refined);
+        renderCounts();
         renderCards();
         renderMain();
     }
@@ -628,6 +648,7 @@
         if (!card) return;
         await api(`/cards/${card.id}`, {method: 'DELETE'});
         state.cards = state.cards.filter((c) => c.id !== card.id);
+        await pruneOrphanApprovedTags();
         // Reset the main pane to its initial (no card selected) state.
         state.activeId = null;
         renderAll();
