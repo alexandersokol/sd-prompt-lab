@@ -1750,6 +1750,7 @@
               }
           };
       }
+      get extension() { return this; }
   }
   function compareArray(a, b, compare) {
       if (a.length != b.length)
@@ -1947,6 +1948,7 @@
           this.inner = inner;
           this.prec = prec;
       }
+      get extension() { return this; }
   }
   /**
   Extension compartments can be used to make a configuration
@@ -1981,6 +1983,7 @@
           this.compartment = compartment;
           this.inner = inner;
       }
+      get extension() { return this; }
   }
   class Configuration {
       constructor(base, compartments, dynamicSlots, address, staticValues, facets) {
@@ -2090,6 +2093,8 @@
           else {
               let content = ext.extension;
               if (!content)
+                  throw new Error(`Unrecognized extension value in extension set (${ext}).`);
+              if (content == ext)
                   throw new Error(`Unrecognized extension value in extension set (${ext}). This sometimes happens because multiple instances of @codemirror/state are loaded, breaking instanceof checks.`);
               inner(content, prec);
           }
@@ -4815,8 +4820,11 @@
   function maxOffset(node) {
       return node.nodeType == 3 ? node.nodeValue.length : node.childNodes.length;
   }
-  function flattenRect(rect, left) {
-      let x = left ? rect.left : rect.right;
+  function flattenRect(rect, toLeft) {
+      let { left, right } = rect;
+      if (left == right)
+          return rect;
+      let x = toLeft ? left : right;
       return { left: x, right: x, top: rect.top, bottom: rect.bottom };
   }
   function windowRect(win) {
@@ -6080,7 +6088,7 @@
           return this.posBefore(tile) + tile.length;
       }
       covers(side) { return true; }
-      coordsIn(pos, side) { return null; }
+      coordsIn(pos, side, rtl) { return null; }
       domPosFor(off, side) {
           let index = domIndex(this.dom);
           let after = this.length ? off > 0 : side > 0;
@@ -6276,7 +6284,7 @@
                       if (child.isComposite()) {
                           scan(child, pos - off);
                       }
-                      else if ((!after || after.isHidden && (side > 0 || forCoords && onSameLine(after, child))) &&
+                      else if ((!after || after.isHidden && (side > 0 && !(after.flags & 32 /* TileFlag.After */) || forCoords && onSameLine(after, child))) &&
                           (end > pos || (child.flags & 32 /* TileFlag.After */))) {
                           after = child;
                           afterOff = pos - off;
@@ -6293,11 +6301,11 @@
           let target = ((side < 0 ? before : after) || before || after);
           return target ? { tile: target, offset: target == before ? beforeOff : afterOff } : null;
       }
-      coordsIn(pos, side) {
+      coordsIn(pos, side, rtl) {
           let found = this.resolveInline(pos, side, true);
           if (!found)
               return fallbackRect(this);
-          return found.tile.coordsIn(Math.max(0, found.offset), side);
+          return found.tile.coordsIn(Math.max(0, found.offset), side, rtl);
       }
       domIn(pos, side) {
           let found = this.resolveInline(pos, side);
@@ -6361,7 +6369,7 @@
       }
       isText() { return true; }
       toString() { return JSON.stringify(this.text); }
-      coordsIn(pos, side) {
+      coordsIn(pos, side, rtl) {
           let length = this.dom.nodeValue.length;
           if (pos > length)
               pos = length;
@@ -6371,7 +6379,7 @@
                   if (pos) {
                       from--;
                       flatten = 1;
-                  } // FIXME this is wrong in RTL text
+                  }
                   else if (to < length) {
                       to++;
                       flatten = -1;
@@ -6390,7 +6398,7 @@
           let rect = rects[(flatten ? flatten < 0 : side >= 0) ? 0 : rects.length - 1];
           if (browser.safari && !flatten && rect.width == 0)
               rect = Array.prototype.find.call(rects, r => r.width) || rect;
-          return flatten ? flattenRect(rect, flatten < 0) : rect || null;
+          return rtl == null ? rect : flattenRect(rect, (flatten ? flatten > 0 : side < 0) == rtl);
       }
       static of(text, dom) {
           let tile = new TextTile(dom || document.createTextNode(text), text);
@@ -6466,7 +6474,10 @@
       }
       get isHidden() { return true; }
       get overrideDOMText() { return Text.empty; }
-      coordsIn(pos) { return this.dom.getBoundingClientRect(); }
+      coordsIn(pos, side, rtl) {
+          let rect = this.dom.getBoundingClientRect();
+          return rtl == null ? rect : flattenRect(rect, (side > 0) == rtl);
+      }
   }
   // Represents a position in the tile tree.
   class TilePointer {
@@ -6828,8 +6839,8 @@
       find(cls, test, type = 2 /* Reused.DOM */) {
           let i = cls.bucket;
           let bucket = this.buckets[i], off = this.index[i];
-          for (let j = bucket.length - 1; j >= 0; j--) {
-              // Look at the most recently added items first (last-in, first-out)
+          for (let j = 0; j < bucket.length; j++) {
+              // Look at the most oldest items first (first-in, first-out)
               let index = (j + off) % bucket.length, tile = bucket[index];
               if ((!test || test(tile)) && !this.reused.has(tile)) {
                   bucket.splice(index, 1);
@@ -7032,7 +7043,7 @@
       }
       emit(from, to) {
           let pendingLineAttrs = null;
-          let b = this.builder, markCount = 0;
+          let b = this.builder, markCount = -1;
           let openEnd = RangeSet.spans(this.decorations, from, to, {
               point: (from, to, deco, active, openStart, index) => {
                   if (deco instanceof PointDecoration) {
@@ -7086,7 +7097,8 @@
                   markCount = active.length;
               }
           });
-          this.openWidget = openEnd > markCount;
+          if (markCount > -1)
+              this.openWidget = openEnd > markCount;
           if (!this.openWidget)
               b.addLineStartIfNotCovered(pendingLineAttrs);
           this.openMarks = openEnd;
@@ -7495,7 +7507,7 @@
       domAtPos(pos, side) {
           let { tile, offset } = this.tile.resolveBlock(pos, side);
           if (tile.isWidget())
-              return tile.domPosFor(pos, side);
+              return tile.domPosFor(offset, side);
           return tile.domIn(offset, side);
       }
       inlineDOMNearPos(pos, side) {
@@ -7532,14 +7544,16 @@
               after = null;
           return before && side < 0 || !after ? before.domIn(beforeOff, side) : after.domIn(afterOff, side);
       }
-      coordsAt(pos, side) {
+      // Get the coord of the element at the given side of the given
+      // position. If rtl is given, flatten it using that text direction.
+      coordsAt(pos, side, rtl) {
           let { tile, offset } = this.tile.resolveBlock(pos, side);
           if (tile.isWidget()) {
               if (tile.widget instanceof BlockGapWidget)
                   return null;
               return tile.coordsInWidget(offset, side, true);
           }
-          return tile.coordsIn(offset, side);
+          return tile.coordsIn(offset, side, rtl);
       }
       lineAt(pos, side) {
           let { tile } = this.tile.resolveBlock(pos, side);
@@ -7713,7 +7727,6 @@
           this.blockWrappers = this.view.state.facet(blockWrappers).map(v => typeof v == "function" ? v(this.view) : v);
       }
       scrollIntoView(target) {
-          var _a;
           if (target.isSnapshot) {
               let ref = this.view.viewState.lineBlockAt(target.range.head);
               this.view.scrollDOM.scrollTop = ref.top - target.yMargin;
@@ -7730,7 +7743,7 @@
               }
           }
           let { range } = target;
-          let rect = this.coordsAt(range.head, (_a = range.assoc) !== null && _a !== void 0 ? _a : (range.empty ? 0 : range.head > range.anchor ? -1 : 1)), other;
+          let rect = this.coordsAt(range.head, range.assoc || (range.head > range.anchor ? -1 : 1)), other;
           if (!rect)
               return;
           if (!range.empty && (other = this.coordsAt(range.anchor, range.anchor > range.head ? -1 : 1)))
@@ -8772,6 +8785,7 @@
           this.view = view;
           this.lastKeyCode = 0;
           this.lastKeyTime = 0;
+          this.touchActive = false;
           this.lastTouchTime = 0;
           this.lastTouchX = 0;
           this.lastTouchY = 0;
@@ -8783,6 +8797,10 @@
           // (after which we retroactively handle them and reset the DOM) to
           // avoid messing up the virtual keyboard state.
           this.pendingIOSKey = undefined;
+          // Set to a time stap by scroll events when touch isn't active on
+          // iOS, to work around an issue where Safari will abort the scroll
+          // momentum if we set scrollTop
+          this.lastIOSMomentumScroll = 0;
           // When enabled (>-1), tab presses are not given to key handlers,
           // leaving the browser's default behavior. If >0, the mode expires
           // at that timestamp, and any other keypress clears it.
@@ -9213,8 +9231,11 @@
       });
   }
   observers.scroll = view => {
-      view.inputState.lastScrollTop = view.scrollDOM.scrollTop;
-      view.inputState.lastScrollLeft = view.scrollDOM.scrollLeft;
+      let iState = view.inputState;
+      iState.lastScrollTop = view.scrollDOM.scrollTop;
+      iState.lastScrollLeft = view.scrollDOM.scrollLeft;
+      if (browser.ios && !iState.touchActive)
+          iState.lastIOSMomentumScroll = Date.now();
   };
   observers.wheel = observers.mousewheel = view => {
       view.inputState.lastWheelEvent = Date.now();
@@ -9227,6 +9248,7 @@
   };
   observers.touchstart = (view, e) => {
       let iState = view.inputState, touch = e.targetTouches[0];
+      iState.touchActive = true;
       iState.lastTouchTime = Date.now();
       if (touch) {
           iState.lastTouchX = touch.clientX;
@@ -9236,6 +9258,9 @@
   };
   observers.touchmove = view => {
       view.inputState.setSelectionOrigin("select.pointer");
+  };
+  observers.touchend = (view, e) => {
+      view.inputState.touchActive = false;
   };
   handlers.mousedown = (view, event) => {
       view.observer.flush();
@@ -12498,6 +12523,7 @@
                                   this.viewState.lineBlockAt(scrollAnchorPos).top;
                               let diff = (newAnchorHeight - scrollAnchorHeight) / this.scaleY;
                               if ((diff > 1 || diff < -1) &&
+                                  !(browser.ios && this.inputState.lastIOSMomentumScroll > Date.now() - 100) &&
                                   (scroll == this.scrollDOM || this.hasFocus ||
                                       Math.max(this.inputState.lastWheelEvent, this.inputState.lastTouchTime) > Date.now() - 100)) {
                                   scrollOffset = scrollOffset + diff;
@@ -12789,12 +12815,9 @@
       */
       coordsAtPos(pos, side = 1) {
           this.readMeasured();
-          let rect = this.docView.coordsAt(pos, side);
-          if (!rect || rect.left == rect.right)
-              return rect;
           let line = this.state.doc.lineAt(pos), order = this.bidiSpans(line);
           let span = order[BidiSpan.find(order, pos - line.from, -1, side)];
-          return flattenRect(rect, (span.dir == Direction.LTR) == (side > 0));
+          return this.docView.coordsAt(pos, side, span.dir == Direction.RTL);
       }
       /**
       Return the rectangle around a given character. If `pos` does not
