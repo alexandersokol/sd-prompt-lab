@@ -174,6 +174,10 @@
         cleanup: 'spl-tv-cleanup',
         approve: 'spl-tv-approve',
         approveLabel: 'spl-tv-approve-label',
+        removeCard: 'spl-tv-remove-card',
+        removeDialog: 'spl-tv-remove-dialog',
+        removeCancel: 'spl-tv-remove-cancel',
+        removeConfirm: 'spl-tv-remove-confirm',
         cardsEmpty: 'spl-tv-cards-empty',
         cardsList: 'spl-tv-cards-list',
         mainEmpty: 'spl-tv-main-empty',
@@ -490,9 +494,12 @@
         if (!card) return;
         const segs = tokenize(card.text);
         const key = tagKey(segs[index] || '');
+        const wasApproved = state.tags[key] === 'approved';
         const newText = removeSegment(card.text, index);
         await patchCard(card, {text: newText});
-        if (key) await setTag(key, 'declined');
+        // An approved tag is only dropped from this card; it keeps its approval
+        // (it may be approved via other cards). Otherwise removal declines it.
+        if (key && !wasApproved) await setTag(key, 'declined');
         renderCounts();
         renderChips();
         renderCards();
@@ -569,7 +576,7 @@
         return state.cards
             .filter((c) => !approvedOnly || c.approved)
             .map((c) => c.text)
-            .join('\n');
+            .join('\n\n');
     }
 
     function openExport() {
@@ -611,6 +618,17 @@
         renderAll();
     }
 
+    async function confirmRemoveCard() {
+        closeDialog(ids.removeDialog);
+        const card = activeCard();
+        if (!card) return;
+        await api(`/cards/${card.id}`, {method: 'DELETE'});
+        state.cards = state.cards.filter((c) => c.id !== card.id);
+        // Reset the main pane to its initial (no card selected) state.
+        state.activeId = null;
+        renderAll();
+    }
+
     // ---- events ----------------------------------------------------------
 
     function bindEvents() {
@@ -646,6 +664,15 @@
         $(ids.modeText)?.addEventListener('click', () => setMode('text'));
         $(ids.cleanup)?.addEventListener('click', () => cleanupActive().catch((e) => console.error(e)));
         $(ids.approve)?.addEventListener('click', () => toggleApprove().catch((e) => console.error(e)));
+
+        $(ids.removeCard)?.addEventListener('click', () => {
+            if (activeCard()) openDialog(ids.removeDialog);
+        });
+        $(ids.removeCancel)?.addEventListener('click', () => closeDialog(ids.removeDialog));
+        $(ids.removeConfirm)?.addEventListener('click', () => confirmRemoveCard().catch((e) => console.error(e)));
+        $(ids.removeDialog)?.addEventListener('click', (e) => {
+            if (e.target.id === ids.removeDialog) closeDialog(ids.removeDialog);
+        });
 
         $(ids.cardsList)?.addEventListener('click', (e) => {
             const card = e.target.closest('.spl-tv-card');

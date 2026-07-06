@@ -49,6 +49,10 @@ def ui_tab_tag_validator():
                         <span class="material-symbols-rounded" aria-hidden="true">check</span>
                         <span id="spl-tv-approve-label">Approve</span>
                     </button>
+                    <button id="spl-tv-remove-card" class="spl-tv-btn spl-tv-btn-danger" title="Remove this card">
+                        <span class="material-symbols-rounded" aria-hidden="true">delete</span>
+                        <span>Remove</span>
+                    </button>
                 </div>
             </div>
 
@@ -120,6 +124,25 @@ def ui_tab_tag_validator():
                             <span>Copy</span>
                         </button>
                         <button id="spl-tv-export-close" class="spl-tv-btn">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Remove single card confirm dialog -->
+            <div id="spl-tv-remove-dialog" class="spl-tv-dialog-backdrop" hidden>
+                <div class="spl-tv-dialog spl-tv-dialog-sm">
+                    <div class="spl-tv-dialog-header">
+                        <div class="spl-tv-dialog-title">
+                            <span class="material-symbols-rounded" aria-hidden="true">delete</span>
+                            Remove this card?
+                        </div>
+                    </div>
+                    <div class="spl-tv-dialog-msg">
+                        This removes the currently opened prompt card. This cannot be undone.
+                    </div>
+                    <div class="spl-tv-dialog-actions">
+                        <button id="spl-tv-remove-cancel" class="spl-tv-btn">Cancel</button>
+                        <button id="spl-tv-remove-confirm" class="spl-tv-btn spl-tv-btn-danger">Remove card</button>
                     </div>
                 </div>
             </div>
