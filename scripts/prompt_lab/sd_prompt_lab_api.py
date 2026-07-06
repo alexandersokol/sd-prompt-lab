@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 import scripts.prompt_lab.sd_prompt_lab_db as db
 import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
 import scripts.prompt_lab.sd_prompt_lab_tag_presets as tag_presets
+import scripts.prompt_lab.sd_prompt_lab_validator_db as validator_db
 import scripts.prompt_lab.sd_prompt_lab_utils as utils
 import scripts.prompt_lab.sd_promt_lab_env as env
 
@@ -54,6 +55,19 @@ class WildcardDeleteRequest(BaseModel):
 
 class TagPresetDownloadRequest(BaseModel):
     id: str
+
+
+class ValidatorCardsCreate(BaseModel):
+    texts: list[str]
+
+
+class ValidatorCardUpdate(BaseModel):
+    text: str | None = None
+    approved: bool | None = None
+
+
+class ValidatorTagUpdate(BaseModel):
+    status: str  # 'approved' | 'declined' | 'none'
 
 
 def _wildcards_root():
@@ -335,6 +349,39 @@ def init_api(app: FastAPI):
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    # --- Tag Validator ---------------------------------------------------
+    # Registered before the catch-all /sd-prompt-lab/{prompt_id} route.
+
+    @app.get("/sd-prompt-lab/validator/state")
+    def validator_state():
+        return validator_db.get_state()
+
+    @app.post("/sd-prompt-lab/validator/cards")
+    def validator_create_cards(data: ValidatorCardsCreate):
+        return {"cards": validator_db.create_cards(data.texts)}
+
+    @app.patch("/sd-prompt-lab/validator/cards/{card_id}")
+    def validator_update_card(card_id: int, data: ValidatorCardUpdate):
+        ok = validator_db.update_card(card_id, text=data.text, approved=data.approved)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Card not found")
+        return {"status": "ok"}
+
+    @app.delete("/sd-prompt-lab/validator/cards/{card_id}")
+    def validator_delete_card(card_id: int):
+        validator_db.delete_card(card_id)
+        return {"status": "ok"}
+
+    @app.post("/sd-prompt-lab/validator/cards/clear")
+    def validator_clear():
+        validator_db.clear_all()
+        return {"status": "ok"}
+
+    @app.put("/sd-prompt-lab/validator/tags/{name}")
+    def validator_set_tag(name: str, data: ValidatorTagUpdate):
+        validator_db.set_tag(name, data.status)
+        return {"status": "ok"}
 
     @app.get("/sd-prompt-lab/{prompt_id}")
     async def get_prompt(prompt_id: int):

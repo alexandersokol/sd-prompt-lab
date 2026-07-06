@@ -14,6 +14,7 @@ from modules.shared import OptionInfo
 from scripts.prompt_lab.ui.ui_main import ui_main_block
 from scripts.prompt_lab.sd_prompt_lab_api import init_api
 from scripts.prompt_lab.sd_prompt_lab_db import init_db
+from scripts.prompt_lab.sd_prompt_lab_validator_db import init_validator_db
 
 env.script_dir = scripts.basedir()
 
@@ -24,6 +25,7 @@ def on_ui_tabs():
 
 def on_app_started(demo: Optional[Blocks], app: FastAPI):
     init_db()
+    init_validator_db()
     init_api(app)
 
 
