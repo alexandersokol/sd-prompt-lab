@@ -87,11 +87,11 @@ def delete_card(card_id):
         conn.commit()
 
 
-def clear_all():
+def clear_cards():
+    """Remove all prompt cards. Tag verdicts are kept (persistent lists)."""
     with connect() as conn:
         c = conn.cursor()
         c.execute("DELETE FROM validator_cards")
-        c.execute("DELETE FROM validator_tags")
         conn.commit()
 
 

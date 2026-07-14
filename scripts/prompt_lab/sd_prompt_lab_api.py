@@ -375,7 +375,7 @@ def init_api(app: FastAPI):
 
     @app.post("/sd-prompt-lab/validator/cards/clear")
     def validator_clear():
-        validator_db.clear_all()
+        validator_db.clear_cards()
         return {"status": "ok"}
 
     @app.put("/sd-prompt-lab/validator/tags/{name}")

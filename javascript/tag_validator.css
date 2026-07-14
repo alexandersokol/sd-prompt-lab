@@ -113,6 +113,18 @@
 #sd-prompt-lab-tag-validator-root .spl-tv-count-declined {
     color: var(--spl-red);
 }
+#sd-prompt-lab-tag-validator-root .spl-tv-count-btn {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-count-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--spl-border);
+}
 
 /* mode switch */
 #sd-prompt-lab-tag-validator-root .spl-tv-mode-switch {
@@ -304,6 +316,31 @@
     border-color: rgba(74, 222, 128, 0.4);
 }
 
+/* per-card tag status counts (start of the status pane) */
+#sd-prompt-lab-tag-validator-root .spl-tv-status-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    background: var(--spl-panel);
+    border: 1px solid var(--spl-border);
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-status-count .material-symbols-rounded {
+    font-size: 15px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-status-count.is-approved {
+    color: var(--spl-green);
+    border-color: rgba(74, 222, 128, 0.4);
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-status-count.is-declined {
+    color: var(--spl-red);
+    border-color: rgba(248, 113, 113, 0.4);
+}
+
 /* chips */
 #sd-prompt-lab-tag-validator-root .spl-tv-chips {
     flex: 1 1 auto;
@@ -491,6 +528,84 @@
 #sd-prompt-lab-tag-validator-root .spl-tv-switch input:checked + .spl-tv-switch-track .spl-tv-switch-knob {
     transform: translateX(16px);
     background: var(--spl-green);
+}
+
+/* manage approved / declined tags dialog */
+#sd-prompt-lab-tag-validator-root .spl-tv-tags-filter-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    background: var(--spl-panel-2);
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-tags-filter-wrap .material-symbols-rounded {
+    font-size: 18px;
+    color: var(--spl-muted);
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-tags-filter {
+    flex: 1 1 auto;
+    border: none;
+    background: transparent;
+    color: var(--spl-text);
+    font-size: 13px;
+    outline: none;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-tags-manage-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 8px;
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 4px;
+    min-height: 60px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-empty {
+    color: var(--spl-muted);
+    font-size: 13px;
+    padding: 12px 4px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 4px 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--spl-border);
+    background: var(--spl-panel-2);
+    font-size: 13px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-chip.is-approved {
+    background: rgba(74, 222, 128, 0.16);
+    border-color: var(--spl-green);
+    color: #d7ffe6;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-chip.is-declined {
+    background: rgba(248, 113, 113, 0.16);
+    border-color: var(--spl-red);
+    color: #ffe0e0;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--spl-muted);
+    cursor: pointer;
+    padding: 0;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-remove .material-symbols-rounded {
+    font-size: 15px;
+}
+#sd-prompt-lab-tag-validator-root .spl-tv-manage-remove:hover {
+    background: var(--spl-red);
+    color: #2a0c0c;
 }
 
 /* responsive: stack panes on narrow viewports */

@@ -169,13 +169,14 @@
         clearBtn: 'spl-tv-clear',
         countApproved: 'spl-tv-count-approved',
         countDeclined: 'spl-tv-count-declined',
+        counterApproved: 'spl-tv-counter-approved',
+        counterDeclined: 'spl-tv-counter-declined',
         cardControls: 'spl-tv-card-controls',
         modeTags: 'spl-tv-mode-tags',
         modeText: 'spl-tv-mode-text',
         undo: 'spl-tv-undo',
         redo: 'spl-tv-redo',
         cleanup: 'spl-tv-cleanup',
-        refine: 'spl-tv-refine',
         approve: 'spl-tv-approve',
         approveLabel: 'spl-tv-approve-label',
         removeCard: 'spl-tv-remove-card',
@@ -201,6 +202,11 @@
         clearDialog: 'spl-tv-clear-dialog',
         clearCancel: 'spl-tv-clear-cancel',
         clearConfirm: 'spl-tv-clear-confirm',
+        tagsDialog: 'spl-tv-tags-dialog',
+        tagsDialogTitle: 'spl-tv-tags-dialog-title',
+        tagsFilter: 'spl-tv-tags-filter',
+        tagsList: 'spl-tv-tags-list',
+        tagsClose: 'spl-tv-tags-close',
     };
 
     const $ = (id) => gradioApp()?.getElementById(id);
@@ -289,21 +295,6 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(fields),
         });
-    }
-
-    function anyCardHasTag(key) {
-        return state.cards.some((c) => tokenize(c.text).some((seg) => tagKey(seg) === key));
-    }
-
-    // An approved verdict only lives while the tag still exists in some card.
-    // Once no card contains it, the tag reverts to regular (declined verdicts
-    // persist as filters and are left untouched).
-    async function pruneOrphanApprovedTags() {
-        for (const key of Object.keys(state.tags)) {
-            if (state.tags[key] === 'approved' && !anyCardHasTag(key)) {
-                await setTag(key, 'none');
-            }
-        }
     }
 
     // ---- undo / redo history (tag-mode edits) ---------------------------
@@ -410,16 +401,35 @@
         const el = $(ids.issues);
         const card = activeCard();
         if (!el || !card) return;
-        const issues = validate(card.text);
-        if (issues.length === 0) {
-            el.innerHTML = '<span class="spl-tv-issue spl-tv-issue-ok">'
-                + '<span class="material-symbols-rounded" aria-hidden="true">verified</span>Valid</span>';
-            return;
+
+        // Per-card tag counts (order: not-approved, approved, declined).
+        let approved = 0;
+        let declined = 0;
+        let neutral = 0;
+        for (const seg of tokenize(card.text)) {
+            const st = chipStatus(tagKey(seg));
+            if (st === 'approved') approved++;
+            else if (st === 'declined') declined++;
+            else neutral++;
         }
-        el.innerHTML = issues.map((iss) =>
-            `<span class="spl-tv-issue" title="${escapeHtml(iss.msg)}">`
-            + '<span class="material-symbols-rounded" aria-hidden="true">error</span>'
-            + `${escapeHtml(iss.msg)}</span>`).join('');
+        const counts =
+            `<span class="spl-tv-status-count" title="Not-approved tags in this prompt">`
+            + `<span class="material-symbols-rounded" aria-hidden="true">radio_button_unchecked</span>${neutral}</span>`
+            + `<span class="spl-tv-status-count is-approved" title="Approved tags in this prompt">`
+            + `<span class="material-symbols-rounded" aria-hidden="true">check_circle</span>${approved}</span>`
+            + `<span class="spl-tv-status-count is-declined" title="Declined tags in this prompt">`
+            + `<span class="material-symbols-rounded" aria-hidden="true">cancel</span>${declined}</span>`;
+
+        const issues = validate(card.text);
+        const issuesHtml = issues.length === 0
+            ? '<span class="spl-tv-issue spl-tv-issue-ok">'
+                + '<span class="material-symbols-rounded" aria-hidden="true">verified</span>Valid</span>'
+            : issues.map((iss) =>
+                `<span class="spl-tv-issue" title="${escapeHtml(iss.msg)}">`
+                + '<span class="material-symbols-rounded" aria-hidden="true">error</span>'
+                + `${escapeHtml(iss.msg)}</span>`).join('');
+
+        el.innerHTML = counts + issuesHtml;
     }
 
     function renderChips() {
@@ -559,8 +569,11 @@
 
     // ---- actions ---------------------------------------------------------
 
-    function selectCard(id) {
+    async function selectCard(id) {
         state.activeId = id;
+        const card = activeCard();
+        // Auto-purge every card as it is opened.
+        if (card) await autoPurge(card);
         renderCards();
         renderMain();
     }
@@ -593,10 +606,9 @@
         pushHistory();
         const newText = removeSegment(card.text, index);
         await patchCard(card, {text: newText});
-        // An approved tag is only dropped from this card; it keeps its approval
-        // while it still exists in some card. Otherwise removal declines it.
+        // Removing an approved tag just drops it from this card (its approval
+        // persists as a curated list). Removing a regular tag declines it.
         if (key && !wasApproved) await setTag(key, 'declined');
-        await pruneOrphanApprovedTags();
         renderCounts();
         renderChips();
         renderCards();
@@ -620,28 +632,23 @@
         }
     }
 
-    async function cleanupActive() {
-        const card = activeCard();
-        if (!card) return;
-        pushHistory();
+    // Purge runs automatically (on import and on opening a card); it is not a
+    // manual button. Returns true if the card text changed.
+    async function autoPurge(card) {
         const cleaned = purge(card.text);
+        if (cleaned === card.text) return false;
         await patchCard(card, {text: cleaned});
-        await pruneOrphanApprovedTags();
-        syncEditorDoc(cleaned);
-        renderCounts();
-        renderCards();
-        renderMain();
+        return true;
     }
 
+    // The "Clean-up" button: remove every declined tag from the open card.
     async function refineActive() {
         const card = activeCard();
         if (!card) return;
         pushHistory();
-        // Drop every tag that is globally declined from this card.
         const kept = tokenize(card.text).filter((seg) => state.tags[tagKey(seg)] !== 'declined');
         const refined = kept.join(', ');
         await patchCard(card, {text: refined});
-        await pruneOrphanApprovedTags();
         syncEditorDoc(refined);
         renderCounts();
         renderCards();
@@ -678,7 +685,7 @@
         state.cards.push(...created);
         clearHistory();
         renderCards();
-        if (created.length > 0) selectCard(created[0].id);
+        if (created.length > 0) selectCard(created[0].id).catch((e) => console.error(e));
     }
 
     function buildExport(approvedOnly) {
@@ -721,8 +728,8 @@
     async function confirmClear() {
         closeDialog(ids.clearDialog);
         await api('/cards/clear', {method: 'POST'});
+        // Clear removes prompt cards only; approved/declined tags are kept.
         state.cards = [];
-        state.tags = {};
         state.activeId = null;
         clearHistory();
         renderAll();
@@ -734,11 +741,57 @@
         if (!card) return;
         await api(`/cards/${card.id}`, {method: 'DELETE'});
         state.cards = state.cards.filter((c) => c.id !== card.id);
-        await pruneOrphanApprovedTags();
         clearHistory();
         // Reset the main pane to its initial (no card selected) state.
         state.activeId = null;
         renderAll();
+    }
+
+    // ---- manage approved / declined tags dialog -------------------------
+
+    let manageStatus = 'approved';   // which list the dialog is showing
+
+    function openTagsDialog(status) {
+        manageStatus = status;
+        const title = $(ids.tagsDialogTitle);
+        if (title) title.textContent = status === 'approved' ? 'Approved tags' : 'Declined tags';
+        const filter = $(ids.tagsFilter);
+        if (filter) filter.value = '';
+        renderTagsList();
+        openDialog(ids.tagsDialog);
+        filter?.focus();
+    }
+
+    function renderTagsList() {
+        const list = $(ids.tagsList);
+        if (!list) return;
+        const needle = ($(ids.tagsFilter)?.value || '').trim().toLowerCase();
+        const names = Object.keys(state.tags)
+            .filter((k) => state.tags[k] === manageStatus)
+            .filter((k) => !needle || k.includes(needle))
+            .sort();
+        if (names.length === 0) {
+            list.innerHTML = `<div class="spl-tv-manage-empty">${
+                needle ? 'No matching tags.' : `No ${manageStatus} tags.`}</div>`;
+            return;
+        }
+        list.innerHTML = names.map((name) =>
+            `<span class="spl-tv-manage-chip is-${manageStatus}">`
+            + `<span class="spl-tv-manage-chip-text">${escapeHtml(name)}</span>`
+            + `<button class="spl-tv-manage-remove" data-key="${escapeHtml(name)}" `
+            + `title="Remove from ${manageStatus}" aria-label="Remove tag">`
+            + '<span class="material-symbols-rounded" aria-hidden="true">close</span>'
+            + '</button></span>').join('');
+    }
+
+    async function removeManagedTag(key) {
+        await setTag(key, 'none');
+        renderCounts();
+        renderTagsList();
+        if (activeCard()) {
+            renderChips();
+            renderIssues();
+        }
     }
 
     // ---- events ----------------------------------------------------------
@@ -776,9 +829,21 @@
         $(ids.modeText)?.addEventListener('click', () => setMode('text'));
         $(ids.undo)?.addEventListener('click', () => undo().catch((e) => console.error(e)));
         $(ids.redo)?.addEventListener('click', () => redo().catch((e) => console.error(e)));
-        $(ids.cleanup)?.addEventListener('click', () => cleanupActive().catch((e) => console.error(e)));
-        $(ids.refine)?.addEventListener('click', () => refineActive().catch((e) => console.error(e)));
+        // The Clean-up button removes declined tags from the open card.
+        $(ids.cleanup)?.addEventListener('click', () => refineActive().catch((e) => console.error(e)));
         $(ids.approve)?.addEventListener('click', () => toggleApprove().catch((e) => console.error(e)));
+
+        $(ids.counterApproved)?.addEventListener('click', () => openTagsDialog('approved'));
+        $(ids.counterDeclined)?.addEventListener('click', () => openTagsDialog('declined'));
+        $(ids.tagsClose)?.addEventListener('click', () => closeDialog(ids.tagsDialog));
+        $(ids.tagsFilter)?.addEventListener('input', renderTagsList);
+        $(ids.tagsDialog)?.addEventListener('click', (e) => {
+            if (e.target.id === ids.tagsDialog) closeDialog(ids.tagsDialog);
+        });
+        $(ids.tagsList)?.addEventListener('click', (e) => {
+            const btn = e.target.closest('.spl-tv-manage-remove');
+            if (btn) removeManagedTag(btn.dataset.key).catch((err) => console.error(err));
+        });
 
         $(ids.removeCard)?.addEventListener('click', () => {
             if (activeCard()) openDialog(ids.removeDialog);
@@ -792,7 +857,7 @@
         $(ids.cardsList)?.addEventListener('click', (e) => {
             const card = e.target.closest('.spl-tv-card');
             if (!card) return;
-            selectCard(Number(card.dataset.id));
+            selectCard(Number(card.dataset.id)).catch((err) => console.error(err));
         });
 
         $(ids.chips)?.addEventListener('click', (e) => {
@@ -838,9 +903,6 @@
         state.tags = {};
         for (const t of (data.tags || [])) state.tags[t.name] = t.status;
         if (!state.cards.some((c) => c.id === state.activeId)) state.activeId = null;
-        // Enforce the "approved only while present in a card" invariant on load,
-        // in case a stale approved verdict persisted from an earlier session.
-        await pruneOrphanApprovedTags();
         clearHistory();
         renderAll();
     }

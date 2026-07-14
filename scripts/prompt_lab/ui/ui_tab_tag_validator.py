@@ -19,14 +19,18 @@ def ui_tab_tag_validator():
                         <span>Clear</span>
                     </button>
                     <div class="spl-tv-counts">
-                        <span class="spl-tv-count spl-tv-count-approved">
+                        <button id="spl-tv-counter-approved" type="button"
+                                class="spl-tv-count spl-tv-count-approved spl-tv-count-btn"
+                                title="Manage approved tags">
                             <span class="material-symbols-rounded" aria-hidden="true">check_circle</span>
                             <span id="spl-tv-count-approved">0</span>
-                        </span>
-                        <span class="spl-tv-count spl-tv-count-declined">
+                        </button>
+                        <button id="spl-tv-counter-declined" type="button"
+                                class="spl-tv-count spl-tv-count-declined spl-tv-count-btn"
+                                title="Manage declined tags">
                             <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
                             <span id="spl-tv-count-declined">0</span>
-                        </span>
+                        </button>
                     </div>
                 </div>
 
@@ -47,13 +51,9 @@ def ui_tab_tag_validator():
                             <span>Text</span>
                         </button>
                     </div>
-                    <button id="spl-tv-cleanup" class="spl-tv-btn" title="Clean up this prompt">
-                        <span class="material-symbols-rounded" aria-hidden="true">mop</span>
-                        <span>Clean-up</span>
-                    </button>
-                    <button id="spl-tv-refine" class="spl-tv-btn" title="Remove all declined tags from this prompt">
+                    <button id="spl-tv-cleanup" class="spl-tv-btn" title="Remove all declined tags from this prompt">
                         <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
-                        <span>Refine</span>
+                        <span>Clean-up</span>
                     </button>
                     <button id="spl-tv-approve" class="spl-tv-btn spl-tv-btn-approve" title="Approve this card">
                         <span class="material-symbols-rounded" aria-hidden="true">check</span>
@@ -167,12 +167,32 @@ def ui_tab_tag_validator():
                         </div>
                     </div>
                     <div class="spl-tv-dialog-msg">
-                        This removes every prompt card and all approved/declined marks. This cannot be undone.
+                        This removes every prompt card. Your approved and declined tags are kept.
+                        This cannot be undone.
                     </div>
                     <div class="spl-tv-dialog-actions">
                         <button id="spl-tv-clear-cancel" class="spl-tv-btn">Cancel</button>
-                        <button id="spl-tv-clear-confirm" class="spl-tv-btn spl-tv-btn-danger">Clear all</button>
+                        <button id="spl-tv-clear-confirm" class="spl-tv-btn spl-tv-btn-danger">Clear cards</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Manage approved / declined tags dialog -->
+            <div id="spl-tv-tags-dialog" class="spl-tv-dialog-backdrop" hidden>
+                <div class="spl-tv-dialog">
+                    <div class="spl-tv-dialog-header">
+                        <div id="spl-tv-tags-dialog-title" class="spl-tv-dialog-title">Approved tags</div>
+                        <button id="spl-tv-tags-close" class="spl-tv-btn spl-tv-btn-icon"
+                                title="Close" aria-label="Close">
+                            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                        </button>
+                    </div>
+                    <label class="spl-tv-tags-filter-wrap">
+                        <span class="material-symbols-rounded" aria-hidden="true">search</span>
+                        <input id="spl-tv-tags-filter" class="spl-tv-tags-filter"
+                               placeholder="Filter tags by name" autocomplete="off">
+                    </label>
+                    <div id="spl-tv-tags-list" class="spl-tv-tags-manage-list"></div>
                 </div>
             </div>
         </div>
