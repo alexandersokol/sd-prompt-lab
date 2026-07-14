@@ -674,7 +674,10 @@
         const key = tagKey(segs[index] || '');
         if (!key) return;
         pushHistory();
-        await setTag(key, 'approved');   // explicit override, even if declined
+        // Toggle: approve, or un-approve back to regular if already approved.
+        // A declined tag is overridden to approved on the first click.
+        const next = state.tags[key] === 'approved' ? 'none' : 'approved';
+        await setTag(key, next);
         renderCounts();
         renderChips();
         renderCards();
