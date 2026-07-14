@@ -51,9 +51,13 @@ def ui_tab_tag_validator():
                             <span>Text</span>
                         </button>
                     </div>
-                    <button id="spl-tv-cleanup" class="spl-tv-btn" title="Remove all declined tags from this prompt">
+                    <button id="spl-tv-cleanup" class="spl-tv-btn" title="Remove declined tags and broken commas from this prompt">
                         <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
                         <span>Clean-up</span>
+                    </button>
+                    <button id="spl-tv-fix" class="spl-tv-btn" title="Auto-fix issues (dangling commas, brackets, weights, prose, BREAK, lora)">
+                        <span class="material-symbols-rounded" aria-hidden="true">auto_fix_high</span>
+                        <span>Fix</span>
                     </button>
                     <button id="spl-tv-approve" class="spl-tv-btn spl-tv-btn-approve" title="Approve this card">
                         <span class="material-symbols-rounded" aria-hidden="true">check</span>

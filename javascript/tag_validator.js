@@ -51,10 +51,22 @@
         return String(seg ?? '').trim().toLowerCase();
     }
 
-    // Auto-purge: strip <lora:...>, remove BREAK, normalize whitespace/commas,
-    // dedupe case-insensitively keeping first occurrence. Returns comma-joined.
+    // Collapse broken comma sequences: runs of commas (",,", ", ,") become one,
+    // leading/trailing commas are dropped, and spacing is normalized to ", ".
+    // Works inside brackets too, e.g. "(b,, c)" -> "(b, c)".
+    function fixCommas(text) {
+        return String(text ?? '')
+            .replace(/,(?:\s*,)+/g, ',')   // runs of commas -> single comma
+            .replace(/\s*,\s*/g, ', ')     // normalize spacing around commas
+            .replace(/^\s*,\s*/, '')       // drop a leading comma
+            .replace(/\s*,\s*$/, '')       // drop a trailing comma
+            .trim();
+    }
+
+    // Auto-purge: strip <lora:...>, remove BREAK, fix broken commas, normalize
+    // whitespace, dedupe case-insensitively keeping first occurrence.
     function purge(text) {
-        const noLora = String(text ?? '').replace(LORA_RE, '');
+        const noLora = fixCommas(String(text ?? '').replace(LORA_RE, ''));
         const seen = new Set();
         const out = [];
         for (const seg of tokenize(noLora)) {
@@ -138,8 +150,78 @@
         return issues;
     }
 
+    // Remove only the brackets that have no matching partner, keeping balanced
+    // ones (so emphasis like "((best))" survives). Fixes the 'brackets' issue.
+    function removeUnmatchedBrackets(str) {
+        const pairs = {'(': ')', '[': ']', '{': '}', '<': '>'};
+        const opens = new Set(['(', '[', '{', '<']);
+        const closes = {')': '(', ']': '[', '}': '{', '>': '<'};
+        const s = String(str ?? '');
+        const keep = new Array(s.length).fill(true);
+        const stack = [];
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            if (opens.has(ch)) {
+                stack.push({ch, i});
+            } else if (ch in closes) {
+                let m = -1;
+                for (let j = stack.length - 1; j >= 0; j--) {
+                    if (pairs[stack[j].ch] === ch) { m = j; break; }
+                }
+                if (m !== -1) stack.splice(m, 1);
+                else keep[i] = false;   // unmatched closer
+            }
+        }
+        for (const it of stack) keep[it.i] = false;   // unmatched openers
+        return [...s].filter((_, i) => keep[i]).join('');
+    }
+
+    // Auto-resolve the fixable validation issues, leaving unfixable ones
+    // (empty prompt, true prose without structure) for the user.
+    function fixPrompt(text) {
+        // BREAK / newlines -> separators; drop <lora:...>.
+        let t = String(text ?? '')
+            .replace(/[\r\n]+/g, ',')
+            .replace(LORA_RE, '')
+            .replace(BREAK_RE, ',');
+
+        // Unpack grouped tag-lists and over-long prose segments: strip their
+        // brackets and weights so the inner commas become real separators.
+        // Emphasis "((best))" and lone weights "(x:1.2)" (no inner comma) are
+        // left alone.
+        const out = [];
+        for (const seg of tokenize(t)) {
+            // A comma still inside a tokenized segment must be bracket-protected,
+            // i.e. a grouped tag-list — unpack it. Also unpack over-long prose.
+            if (seg.length > 120 || seg.includes(',')) {
+                const unpacked = seg
+                    .replace(/\(\s*([^():]*?)\s*:\s*[-\d.]+\s*\)/g, '$1')   // (name:1.2) -> name
+                    .replace(/[{}[\]()<>]/g, ' ');
+                for (const p of unpacked.split(',')) {
+                    const x = p.replace(/\s+/g, ' ').trim();
+                    if (x) out.push(x);
+                }
+            } else {
+                out.push(seg);
+            }
+        }
+        t = out.join(', ');
+
+        // Malformed weights: (name:not-a-number) -> name, (:1.2) -> removed.
+        t = t.replace(/\(([^():]*):([^()]*)\)/g, (m, name, num) => {
+            name = name.trim();
+            num = num.trim();
+            if (name === '') return '';
+            return /^\d*\.?\d+$/.test(num) ? m : name;
+        });
+
+        t = removeUnmatchedBrackets(t);
+        return purge(t);   // fixCommas + dedupe + normalize
+    }
+
     window.SplTagValidator = {
-        splitPrompts, tokenize, tagKey, purge, removeSegment, isBalanced, validate,
+        splitPrompts, tokenize, tagKey, purge, fixCommas, removeSegment,
+        isBalanced, validate, removeUnmatchedBrackets, fixPrompt,
     };
 
     // Node unit-test harness stops here (no DOM). The app layer below only runs
@@ -177,6 +259,7 @@
         undo: 'spl-tv-undo',
         redo: 'spl-tv-redo',
         cleanup: 'spl-tv-cleanup',
+        fix: 'spl-tv-fix',
         approve: 'spl-tv-approve',
         approveLabel: 'spl-tv-approve-label',
         removeCard: 'spl-tv-remove-card',
@@ -595,6 +678,7 @@
         renderCounts();
         renderChips();
         renderCards();
+        renderIssues();
     }
 
     async function onChipRemove(index) {
@@ -642,14 +726,28 @@
     }
 
     // The "Clean-up" button: remove every declined tag from the open card.
+    // The "Clean-up" button: remove declined tags and broken comma segments.
     async function refineActive() {
         const card = activeCard();
         if (!card) return;
         pushHistory();
         const kept = tokenize(card.text).filter((seg) => state.tags[tagKey(seg)] !== 'declined');
-        const refined = kept.join(', ');
+        const refined = fixCommas(kept.join(', '));
         await patchCard(card, {text: refined});
         syncEditorDoc(refined);
+        renderCounts();
+        renderCards();
+        renderMain();
+    }
+
+    // The "Fix" button: auto-resolve the fixable validation issues on this card.
+    async function fixActive() {
+        const card = activeCard();
+        if (!card) return;
+        pushHistory();
+        const fixed = fixPrompt(card.text);
+        await patchCard(card, {text: fixed});
+        syncEditorDoc(fixed);
         renderCounts();
         renderCards();
         renderMain();
@@ -831,6 +929,7 @@
         $(ids.redo)?.addEventListener('click', () => redo().catch((e) => console.error(e)));
         // The Clean-up button removes declined tags from the open card.
         $(ids.cleanup)?.addEventListener('click', () => refineActive().catch((e) => console.error(e)));
+        $(ids.fix)?.addEventListener('click', () => fixActive().catch((e) => console.error(e)));
         $(ids.approve)?.addEventListener('click', () => toggleApprove().catch((e) => console.error(e)));
 
         $(ids.counterApproved)?.addEventListener('click', () => openTagsDialog('approved'));
