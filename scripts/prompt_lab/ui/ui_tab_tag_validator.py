@@ -6,15 +6,15 @@ def ui_tab_tag_validator():
         <div id="sd-prompt-lab-tag-validator-root" class="spl-tv">
             <div class="spl-tv-toolbar">
                 <div class="spl-tv-toolbar-left">
-                    <button id="spl-tv-import" class="spl-tv-btn spl-tv-btn-primary" title="Import prompts">
+                    <button type="button" id="spl-tv-import" class="spl-tv-btn spl-tv-btn-primary" title="Import prompts">
                         <span class="material-symbols-rounded" aria-hidden="true">add</span>
                         <span>Import</span>
                     </button>
-                    <button id="spl-tv-export" class="spl-tv-btn" title="Export prompts">
+                    <button type="button" id="spl-tv-export" class="spl-tv-btn" title="Export prompts">
                         <span class="material-symbols-rounded" aria-hidden="true">ios_share</span>
                         <span>Export</span>
                     </button>
-                    <button id="spl-tv-clear" class="spl-tv-btn spl-tv-btn-danger" title="Clear all cards">
+                    <button type="button" id="spl-tv-clear" class="spl-tv-btn spl-tv-btn-danger" title="Clear all cards">
                         <span class="material-symbols-rounded" aria-hidden="true">delete</span>
                         <span>Clear</span>
                     </button>
@@ -35,35 +35,35 @@ def ui_tab_tag_validator():
                 </div>
 
                 <div id="spl-tv-card-controls" class="spl-tv-toolbar-right" hidden>
-                    <button id="spl-tv-undo" class="spl-tv-btn spl-tv-btn-icon" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo" disabled>
+                    <button type="button" id="spl-tv-undo" class="spl-tv-btn spl-tv-btn-icon" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo" disabled>
                         <span class="material-symbols-rounded" aria-hidden="true">undo</span>
                     </button>
-                    <button id="spl-tv-redo" class="spl-tv-btn spl-tv-btn-icon" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo" disabled>
+                    <button type="button" id="spl-tv-redo" class="spl-tv-btn spl-tv-btn-icon" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo" disabled>
                         <span class="material-symbols-rounded" aria-hidden="true">redo</span>
                     </button>
                     <div class="spl-tv-mode-switch" role="tablist">
-                        <button id="spl-tv-mode-tags" class="spl-tv-mode-btn is-active" role="tab">
+                        <button type="button" id="spl-tv-mode-tags" class="spl-tv-mode-btn is-active" role="tab">
                             <span class="material-symbols-rounded" aria-hidden="true">sell</span>
                             <span>Tags</span>
                         </button>
-                        <button id="spl-tv-mode-text" class="spl-tv-mode-btn" role="tab">
+                        <button type="button" id="spl-tv-mode-text" class="spl-tv-mode-btn" role="tab">
                             <span class="material-symbols-rounded" aria-hidden="true">edit_note</span>
                             <span>Text</span>
                         </button>
                     </div>
-                    <button id="spl-tv-cleanup" class="spl-tv-btn" title="Remove declined tags and broken commas from this prompt">
+                    <button type="button" id="spl-tv-cleanup" class="spl-tv-btn" title="Remove declined tags and broken commas from this prompt">
                         <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
                         <span>Clean-up</span>
                     </button>
-                    <button id="spl-tv-fix" class="spl-tv-btn" title="Auto-fix issues (dangling commas, brackets, weights, prose, BREAK, lora)">
+                    <button type="button" id="spl-tv-fix" class="spl-tv-btn" title="Auto-fix issues (dangling commas, brackets, weights, prose, BREAK, lora)">
                         <span class="material-symbols-rounded" aria-hidden="true">auto_fix_high</span>
                         <span>Fix</span>
                     </button>
-                    <button id="spl-tv-approve" class="spl-tv-btn spl-tv-btn-approve" title="Approve this card">
+                    <button type="button" id="spl-tv-approve" class="spl-tv-btn spl-tv-btn-approve" title="Approve this card">
                         <span class="material-symbols-rounded" aria-hidden="true">check</span>
                         <span id="spl-tv-approve-label">Approve</span>
                     </button>
-                    <button id="spl-tv-remove-card" class="spl-tv-btn spl-tv-btn-danger" title="Remove this card">
+                    <button type="button" id="spl-tv-remove-card" class="spl-tv-btn spl-tv-btn-danger" title="Remove this card">
                         <span class="material-symbols-rounded" aria-hidden="true">delete</span>
                         <span>Remove</span>
                     </button>
@@ -109,8 +109,8 @@ def ui_tab_tag_validator():
                     <textarea id="spl-tv-import-text" class="spl-tv-textarea"
                               placeholder="1girl, solo, blue hair, ...&#10;&#10;another prompt, ..."></textarea>
                     <div class="spl-tv-dialog-actions">
-                        <button id="spl-tv-import-cancel" class="spl-tv-btn">Cancel</button>
-                        <button id="spl-tv-import-add" class="spl-tv-btn spl-tv-btn-primary">Add</button>
+                        <button type="button" id="spl-tv-import-cancel" class="spl-tv-btn">Cancel</button>
+                        <button type="button" id="spl-tv-import-add" class="spl-tv-btn spl-tv-btn-primary">Add</button>
                     </div>
                 </div>
             </div>
@@ -133,11 +133,11 @@ def ui_tab_tag_validator():
                     </div>
                     <textarea id="spl-tv-export-text" class="spl-tv-textarea" readonly></textarea>
                     <div class="spl-tv-dialog-actions">
-                        <button id="spl-tv-export-copy" class="spl-tv-btn spl-tv-btn-primary">
+                        <button type="button" id="spl-tv-export-copy" class="spl-tv-btn spl-tv-btn-primary">
                             <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
                             <span>Copy</span>
                         </button>
-                        <button id="spl-tv-export-close" class="spl-tv-btn">Close</button>
+                        <button type="button" id="spl-tv-export-close" class="spl-tv-btn">Close</button>
                     </div>
                 </div>
             </div>
@@ -155,8 +155,8 @@ def ui_tab_tag_validator():
                         This removes the currently opened prompt card. This cannot be undone.
                     </div>
                     <div class="spl-tv-dialog-actions">
-                        <button id="spl-tv-remove-cancel" class="spl-tv-btn">Cancel</button>
-                        <button id="spl-tv-remove-confirm" class="spl-tv-btn spl-tv-btn-danger">Remove card</button>
+                        <button type="button" id="spl-tv-remove-cancel" class="spl-tv-btn">Cancel</button>
+                        <button type="button" id="spl-tv-remove-confirm" class="spl-tv-btn spl-tv-btn-danger">Remove card</button>
                     </div>
                 </div>
             </div>
@@ -175,8 +175,8 @@ def ui_tab_tag_validator():
                         This cannot be undone.
                     </div>
                     <div class="spl-tv-dialog-actions">
-                        <button id="spl-tv-clear-cancel" class="spl-tv-btn">Cancel</button>
-                        <button id="spl-tv-clear-confirm" class="spl-tv-btn spl-tv-btn-danger">Clear cards</button>
+                        <button type="button" id="spl-tv-clear-cancel" class="spl-tv-btn">Cancel</button>
+                        <button type="button" id="spl-tv-clear-confirm" class="spl-tv-btn spl-tv-btn-danger">Clear cards</button>
                     </div>
                 </div>
             </div>
@@ -186,7 +186,7 @@ def ui_tab_tag_validator():
                 <div class="spl-tv-dialog">
                     <div class="spl-tv-dialog-header">
                         <div id="spl-tv-tags-dialog-title" class="spl-tv-dialog-title">Approved tags</div>
-                        <button id="spl-tv-tags-close" class="spl-tv-btn spl-tv-btn-icon"
+                        <button type="button" id="spl-tv-tags-close" class="spl-tv-btn spl-tv-btn-icon"
                                 title="Close" aria-label="Close">
                             <span class="material-symbols-rounded" aria-hidden="true">close</span>
                         </button>

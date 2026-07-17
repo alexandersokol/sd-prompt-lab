@@ -468,6 +468,9 @@
         if (!list) return;
         if (empty) empty.hidden = state.cards.length > 0;
 
+        // Replacing innerHTML resets scrollTop; keep the user's scroll position
+        // so clicking chips / toolbar buttons doesn't jump the list.
+        const scrollTop = list.scrollTop;
         list.innerHTML = state.cards.map((card, i) => {
             const cls = ['spl-tv-card'];
             if (card.approved) cls.push('is-approved');
@@ -478,6 +481,7 @@
                     <div class="spl-tv-card-text">${escapeHtml(card.text) || '<i>(empty)</i>'}</div>
                 </div>`;
         }).join('');
+        list.scrollTop = scrollTop;
     }
 
     function renderIssues() {
@@ -519,6 +523,7 @@
         const el = $(ids.chips);
         const card = activeCard();
         if (!el || !card) return;
+        const scrollTop = el.scrollTop;
         const segs = tokenize(card.text);
         if (segs.length === 0) {
             el.innerHTML = '<div class="spl-tv-chips-empty">No tags in this prompt.</div>';
@@ -530,15 +535,16 @@
                 <span class="spl-tv-chip is-${status}" data-index="${i}">
                     <span class="spl-tv-chip-text">${escapeHtml(seg)}</span>
                     <span class="spl-tv-chip-actions">
-                        <button class="spl-tv-chip-approve" data-index="${i}" title="Approve tag" aria-label="Approve tag">
+                        <button type="button" class="spl-tv-chip-approve" data-index="${i}" title="Approve tag" aria-label="Approve tag">
                             <span class="material-symbols-rounded" aria-hidden="true">check</span>
                         </button>
-                        <button class="spl-tv-chip-remove" data-index="${i}" title="Remove tag" aria-label="Remove tag">
+                        <button type="button" class="spl-tv-chip-remove" data-index="${i}" title="Remove tag" aria-label="Remove tag">
                             <span class="material-symbols-rounded" aria-hidden="true">close</span>
                         </button>
                     </span>
                 </span>`;
         }).join('');
+        el.scrollTop = scrollTop;
     }
 
     function renderApproveButton() {
@@ -876,13 +882,15 @@
                 needle ? 'No matching tags.' : `No ${manageStatus} tags.`}</div>`;
             return;
         }
+        const scrollTop = list.scrollTop;
         list.innerHTML = names.map((name) =>
             `<span class="spl-tv-manage-chip is-${manageStatus}">`
             + `<span class="spl-tv-manage-chip-text">${escapeHtml(name)}</span>`
-            + `<button class="spl-tv-manage-remove" data-key="${escapeHtml(name)}" `
+            + `<button type="button" class="spl-tv-manage-remove" data-key="${escapeHtml(name)}" `
             + `title="Remove from ${manageStatus}" aria-label="Remove tag">`
             + '<span class="material-symbols-rounded" aria-hidden="true">close</span>'
             + '</button></span>').join('');
+        list.scrollTop = scrollTop;
     }
 
     async function removeManagedTag(key) {
