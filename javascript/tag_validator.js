@@ -708,12 +708,36 @@
         renderIssues();
     }
 
+    // Next card without an approval, searching forward from `fromId` and
+    // wrapping around. Returns null when every card is approved.
+    function nextUnapprovedCard(fromId) {
+        const idx = state.cards.findIndex((c) => c.id === fromId);
+        if (idx === -1) return null;
+        const n = state.cards.length;
+        for (let i = 1; i <= n; i++) {
+            const c = state.cards[(idx + i) % n];
+            if (!c.approved) return c;
+        }
+        return null;
+    }
+
     async function toggleApprove() {
         const card = activeCard();
         if (!card) return;
+        const wasApproved = !!card.approved;
         // Approval is a card-level flag only; it never changes tag verdicts.
         await patchCard(card, {approved: !card.approved});
         clearHistory();
+
+        // After approving, jump straight to the next card still needing review.
+        if (!wasApproved) {
+            const next = nextUnapprovedCard(card.id);
+            if (next) {
+                renderCounts();
+                await selectCard(next.id);
+                return;
+            }
+        }
         renderAll();
     }
 
