@@ -192,25 +192,3 @@ def search_wildcard_files(root: str, query: str) -> list:
             except OSError:
                 continue
     return sorted(matches)
-
-
-def list_txt_files(directory, base=""):
-    """Recursively list all .txt files as a tree."""
-    result = []
-    for entry in sorted(os.scandir(directory), key=lambda e: e.name):
-        if entry.is_dir():
-            sub_items = list_txt_files(entry.path, os.path.join(base, entry.name))
-            if sub_items:
-                result.append({
-                    "name": entry.name,
-                    "path": os.path.join(base, entry.name),
-                    "type": "folder",
-                    "children": sub_items
-                })
-        elif entry.is_file() and entry.name.endswith(".txt"):
-            result.append({
-                "name": entry.name,
-                "path": os.path.join(base, entry.name),
-                "type": "file"
-            })
-    return result

@@ -1,4 +1,3 @@
-import hashlib
 import mimetypes
 import os
 import shutil
@@ -40,10 +39,6 @@ class WildcardSaveRequest(BaseModel):
     content: str
 
 
-class WildcardFileData(BaseModel):
-    path: str
-
-
 class WildcardRenameRequest(BaseModel):
     old_path: str
     new_path: str
@@ -55,6 +50,10 @@ class WildcardDeleteRequest(BaseModel):
 
 class TagPresetDownloadRequest(BaseModel):
     id: str
+
+
+class PromptWordUpdate(BaseModel):
+    word: str
 
 
 class ValidatorCardsCreate(BaseModel):
@@ -171,6 +170,8 @@ def init_api(app: FastAPI):
                     db.update_prompt_image_path(prompt_id, thumbnail_path)
 
             return {"status": "ok", "id": prompt_id}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -383,6 +384,45 @@ def init_api(app: FastAPI):
         validator_db.set_tag(name, data.status)
         return {"status": "ok"}
 
+    # --- Autocompletion words / settings (Settings tab) -------------------
+    # Registered before the catch-all /sd-prompt-lab/{prompt_id} route.
+
+    @app.get("/sd-prompt-lab/words")
+    def list_words(q: str = Query(None), limit: int = Query(200), offset: int = Query(0)):
+        q = (q or "").strip() or None
+        return db.list_prompt_words(q=q, limit=max(1, min(limit, 500)), offset=max(0, offset))
+
+    @app.post("/sd-prompt-lab/words/clear")
+    def clear_words():
+        db.clear_prompt_words()
+        return {"status": "ok"}
+
+    @app.patch("/sd-prompt-lab/words/{word_id}")
+    def rename_word(word_id: int, data: PromptWordUpdate):
+        word = data.word.strip()
+        if not word:
+            raise HTTPException(status_code=400, detail="Word cannot be empty")
+        result = db.rename_prompt_word(word_id, word)
+        if result == "missing":
+            raise HTTPException(status_code=404, detail="Word not found")
+        if result == "conflict":
+            raise HTTPException(status_code=409, detail=f'"{word}" already exists')
+        return {"status": "ok", "word": word}
+
+    @app.delete("/sd-prompt-lab/words/{word_id}")
+    def delete_word(word_id: int):
+        db.delete_prompt_word(word_id)
+        return {"status": "ok"}
+
+    @app.get("/sd-prompt-lab/settings")
+    def get_settings():
+        return db.get_settings()
+
+    @app.put("/sd-prompt-lab/settings")
+    def put_settings(values: dict):
+        db.set_settings(values)
+        return db.get_settings()
+
     @app.get("/sd-prompt-lab/{prompt_id}")
     async def get_prompt(prompt_id: int):
         try:
@@ -401,14 +441,6 @@ def init_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/sd-prompt-lab/wildcards/tree")
-    async def get_wildcards_tree():
-        if not os.path.exists(utils.get_wildcards_dir()):
-            return {"tree": []}
-
-        tree = utils.list_txt_files(utils.get_wildcards_dir())
-        return {"tree": tree}
-
     @app.get("/sd-prompt-lab/wildcards/editor/tree")
     async def get_wildcards_editor_tree():
         root = _wildcards_root()
@@ -417,10 +449,14 @@ def init_api(app: FastAPI):
 
         return {"tree": _build_wildcards_editor_tree(root)}
 
+    @app.get("/sd-prompt-lab/wildcards/editor/search")
+    def search_wildcards_content(q: str = Query("")):
+        return {"paths": utils.search_wildcard_files(_wildcards_root(), q)}
+
     @app.get("/sd-prompt-lab/wildcards/content")
     async def get_wildcard_content(path: str = Query(...)):
-        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
-        if not abs_path.startswith(utils.get_wildcards_dir()) or not os.path.exists(abs_path):
+        abs_path = _resolve_wildcard_path(path)
+        if not os.path.isfile(abs_path):
             raise HTTPException(status_code=404, detail="File not found")
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
@@ -431,34 +467,13 @@ def init_api(app: FastAPI):
 
     @app.post("/sd-prompt-lab/wildcards/save")
     async def save_wildcard_content(data: WildcardSaveRequest):
-        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), data.path))
-        if not abs_path.startswith(utils.get_wildcards_dir()):
-            raise HTTPException(status_code=400, detail="Invalid path")
+        abs_path = _resolve_wildcard_path(data.path)
         if not os.path.isfile(abs_path):
             raise HTTPException(status_code=404, detail="File does not exist")
 
         try:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(data.content)
-            return {"status": "ok"}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/sd-prompt-lab/wildcards/create")
-    async def create_wildcard_file(path: str = Query(...)):
-
-        if not path.endswith(".txt"):
-            path += ".txt"
-
-        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), path))
-        if not abs_path.startswith(utils.get_wildcards_dir()):
-            raise HTTPException(status_code=400, detail="Invalid path")
-        try:
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            if os.path.exists(abs_path):
-                raise HTTPException(status_code=400, detail="File already exists")
-            with open(abs_path, "w", encoding="utf-8") as f:
-                f.write("")
             return {"status": "ok"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -521,91 +536,5 @@ def init_api(app: FastAPI):
             else:
                 os.remove(abs_path)
             return {"status": "ok"}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/sd-prompt-lab/wildcards/delete")
-    async def delete_wildcard_file(data: WildcardFileData):
-        abs_path = os.path.abspath(os.path.join(utils.get_wildcards_dir(), data.path))
-        if not abs_path.startswith(utils.get_wildcards_dir()) or not os.path.isfile(abs_path):
-            raise HTTPException(status_code=404, detail="File not found")
-
-        try:
-            os.remove(abs_path)
-            return {"status": "ok"}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/sd-prompt-lab/wildcards/remove-duplicates")
-    async def remove_duplicate_wildcards():
-        try:
-            wildcards_dir = utils.get_wildcards_dir()
-            duplicates_dir = os.path.join(wildcards_dir, "duplicates")
-            os.makedirs(duplicates_dir, exist_ok=True)
-
-            # Step 1: Collect file hashes
-            file_hashes = {}
-            duplicates = []
-
-            for root, _, files in os.walk(wildcards_dir):
-                for file in files:
-                    if not file.endswith(".txt"):
-                        continue
-                    file_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(file_path, wildcards_dir)
-
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
-
-                    if content_hash in file_hashes:
-                        duplicates.append((rel_path, file_path))
-                    else:
-                        file_hashes[content_hash] = rel_path
-
-            # Step 2: Move duplicates
-            for rel_path, full_path in duplicates:
-                dest_path = os.path.join(duplicates_dir, rel_path)
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                shutil.move(full_path, dest_path)
-
-            return {"status": "ok", "moved": [rel for rel, _ in duplicates]}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    @app.post("/sd-prompt-lab/wildcards/cleanup")
-    async def cleanup_wildcards():
-        try:
-            wildcards_dir = utils.get_wildcards_dir()
-            duplicates_dir = os.path.join(wildcards_dir, "duplicates")
-            removed_files = []
-            removed_dirs = []
-
-            # Step 1: Remove empty and non-txt files
-            for root, dirs, files in os.walk(wildcards_dir, topdown=False):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    if not file.endswith(".txt") or os.path.getsize(file_path) == 0:
-                        os.remove(file_path)
-                        removed_files.append(os.path.relpath(file_path, wildcards_dir))
-
-            # Step 2: Remove empty directories
-            for root, dirs, files in os.walk(wildcards_dir, topdown=False):
-                for d in dirs:
-                    dir_path = os.path.join(root, d)
-                    if not any(os.scandir(dir_path)):
-                        os.rmdir(dir_path)
-                        removed_dirs.append(os.path.relpath(dir_path, wildcards_dir))
-
-            # Step 3: Remove duplicates directory
-            if os.path.exists(duplicates_dir):
-                shutil.rmtree(duplicates_dir)
-                removed_dirs.append("duplicates")
-
-            return {
-                "status": "ok",
-                "removed_files": removed_files,
-                "removed_dirs": removed_dirs
-            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
