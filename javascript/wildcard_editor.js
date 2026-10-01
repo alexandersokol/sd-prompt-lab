@@ -62,9 +62,7 @@ const sdPromptLabWildcardEditor = (() => {
         selectedPath: null,
         selectedType: null,
         editor: null,
-        autosaveTimer: null,
         openFolders: new Set(),
-        silentChange: false,
         initialized: false
     };
 
@@ -258,6 +256,8 @@ const sdPromptLabWildcardEditor = (() => {
         // Always present paths with forward slashes regardless of the server OS.
         state.tree = normalizeTreePaths(data.tree || []);
         renderTree();
+        // Lets other editors (e.g. wildcard link validation) refresh their file list.
+        window.dispatchEvent(new CustomEvent('sd-prompt-lab:wildcards-changed', {detail: {tree: state.tree}}));
     }
 
     const treeIndentStepPx = 16;
@@ -449,40 +449,46 @@ const sdPromptLabWildcardEditor = (() => {
         });
     }
 
+    const activeFile = () => (state.activePath ? state.files.get(state.activePath) : null) || null;
+
+    // Every open file owns its editor state (document, undo history, selection), so
+    // edits, undo and autosave can never leak between tabs.
+    function createFileState(file) {
+        return window.createSdPromptLabEditorState({
+            doc: file.content,
+            onChange: (doc) => onFileChanged(file, doc)
+        });
+    }
+
+    function onFileChanged(file, doc) {
+        file.content = doc;
+        file.dirty = file.content !== file.savedContent;
+        updateTabs();
+        updateHeader();
+        if (activeFile() === file) validateActiveFile();
+
+        if (file.dirty && isAutosaveEnabled()) {
+            scheduleAutosave(file);
+        }
+    }
+
     function ensureEditor() {
         if (state.editor) return;
 
         const host = getEl(ids.host);
         host.innerHTML = '';
-        state.editor = window.createSdPromptLabWildcardEditor({
-            parent: host,
-            doc: '',
-            onChange: (doc) => {
-                if (state.silentChange || !state.activePath) return;
-                const file = state.files.get(state.activePath);
-                if (!file) return;
-
-                file.content = doc;
-                file.dirty = file.content !== file.savedContent;
-                updateTabs();
-                updateHeader();
-                validateActiveFile();
-
-                if (file.dirty && isAutosaveEnabled()) {
-                    scheduleAutosave();
-                }
-            }
-        });
+        state.editor = window.createSdPromptLabWildcardEditor({parent: host, doc: ''});
 
         host.addEventListener('click', handleEditorLinkClick);
         configureEditorScrollBox();
         measureEditorSoon();
     }
 
-    function setEditorDocument(content) {
-        state.silentChange = true;
-        window.setSdPromptLabEditorDocument(state.editor, content || '');
-        state.silentChange = false;
+    // Detached empty state shown while no file is open.
+    function showBlankEditor() {
+        if (!state.editor) return;
+        state.editor.setState(window.createSdPromptLabEditorState({doc: ''}));
+        configureEditorScrollBox();
         measureEditorSoon();
     }
 
@@ -519,16 +525,27 @@ const sdPromptLabWildcardEditor = (() => {
 
     function activateFile(path) {
         ensureEditor();
-        if (state.activePath && state.files.has(state.activePath)) {
-            state.files.get(state.activePath).content = state.editor.state.doc.toString();
-        }
-
         const file = state.files.get(path);
         if (!file) return;
 
+        const previous = activeFile();
+        if (previous) {
+            previous.editorState = state.editor.state;
+            previous.scrollTop = state.editor.scrollDOM.scrollTop;
+            if (previous !== file) flushAutosave(previous);
+        }
+
         state.activePath = path;
+        if (!file.editorState) file.editorState = createFileState(file);
+        state.editor.setState(file.editorState);
+        configureEditorScrollBox();
+        requestAnimationFrame(() => {
+            if (activeFile() !== file || !state.editor) return;
+            state.editor.requestMeasure();
+            state.editor.scrollDOM.scrollTop = file.scrollTop || 0;
+        });
+
         selectPath(path, 'file');
-        setEditorDocument(file.content);
         updateTabs();
         updateHeader();
         validateActiveFile();
@@ -538,11 +555,15 @@ const sdPromptLabWildcardEditor = (() => {
     async function closeFile(path) {
         const file = state.files.get(path);
         if (!file) return;
+        if (file.dirty && isAutosaveEnabled()) await saveFile(file, true);
         if (file.dirty) {
             const shouldClose = await awaitConfirm(`Close "${path}" without saving?`, 'Unsaved changes', 'close', 'Close');
             if (!shouldClose) return;
         }
+        clearTimeout(file.autosaveTimer);
 
+        // The file may have been renamed while a dialog/save was pending.
+        path = file.path;
         const paths = Array.from(state.files.keys());
         const index = paths.indexOf(path);
         state.files.delete(path);
@@ -553,7 +574,7 @@ const sdPromptLabWildcardEditor = (() => {
             if (nextPath && state.files.has(nextPath)) {
                 activateFile(nextPath);
             } else {
-                setEditorDocument('');
+                showBlankEditor();
                 updateHeader();
             }
         }
@@ -579,27 +600,34 @@ const sdPromptLabWildcardEditor = (() => {
         }
     }
 
-    function scheduleAutosave() {
-        clearTimeout(state.autosaveTimer);
-        state.autosaveTimer = setTimeout(() => saveActiveFile(true), 900);
+    function scheduleAutosave(file) {
+        clearTimeout(file.autosaveTimer);
+        file.autosaveTimer = setTimeout(() => saveFile(file, true), 900);
     }
 
-    async function saveActiveFile(isAuto = false) {
-        if (!state.activePath || !state.files.has(state.activePath)) return;
+    // Save a pending autosave right away (used when leaving a tab).
+    function flushAutosave(file) {
+        if (file.autosaveTimer) saveFile(file, true);
+    }
 
-        const file = state.files.get(state.activePath);
-        file.content = state.editor.state.doc.toString();
+    async function saveFile(file, isAuto = false) {
+        if (!file) return;
+        clearTimeout(file.autosaveTimer);
+        file.autosaveTimer = null;
+        if (file === activeFile() && state.editor) file.content = state.editor.state.doc.toString();
         if (!file.dirty && file.content === file.savedContent) return;
 
+        const content = file.content;
         try {
             setStatus(isAuto ? `Autosaving ${file.path}...` : `Saving ${file.path}...`);
             await requestJson('/sd-prompt-lab/wildcards/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({path: file.path, content: file.content})
+                body: JSON.stringify({path: file.path, content})
             });
-            file.savedContent = file.content;
-            file.dirty = false;
+            file.savedContent = content;
+            // Edits made while the request was in flight keep the file dirty.
+            file.dirty = file.content !== file.savedContent;
             updateTabs();
             updateHeader();
             setStatus(isAuto ? `Autosaved ${file.path}` : `Saved ${file.path}`, 'ok');
@@ -753,20 +781,25 @@ const sdPromptLabWildcardEditor = (() => {
     }
 
     function closeDeletedOpenFiles(path, type) {
+        let activeRemoved = false;
         Array.from(state.files.keys()).forEach(filePath => {
             if (filePath === path || (type === 'folder' && filePath.startsWith(`${path}/`))) {
+                clearTimeout(state.files.get(filePath).autosaveTimer);
                 state.files.delete(filePath);
-                if (state.activePath === filePath) state.activePath = null;
+                if (state.activePath === filePath) {
+                    state.activePath = null;
+                    activeRemoved = true;
+                }
             }
         });
 
-        const nextPath = Array.from(state.files.keys())[0] || null;
-        if (nextPath) activateFile(nextPath);
-        else {
-            if (state.editor) setEditorDocument('');
-            updateTabs();
-            updateHeader();
+        if (activeRemoved) {
+            const nextPath = Array.from(state.files.keys())[0] || null;
+            if (nextPath) activateFile(nextPath);
+            else showBlankEditor();
         }
+        updateTabs();
+        updateHeader();
     }
 
     function validateActiveFile() {
@@ -817,7 +850,7 @@ const sdPromptLabWildcardEditor = (() => {
         getEl(ids.newFile)?.addEventListener('click', createFile);
         getEl(ids.newFolder)?.addEventListener('click', createFolder);
         getEl(ids.refresh)?.addEventListener('click', () => loadTree().catch(error => setStatus(error.message, 'error')));
-        getEl(ids.save)?.addEventListener('click', () => saveActiveFile(false));
+        getEl(ids.save)?.addEventListener('click', () => saveFile(activeFile(), false));
         getEl(ids.rename)?.addEventListener('click', renameSelected);
         getEl(ids.delete)?.addEventListener('click', deleteSelected);
         getEl(ids.search)?.addEventListener('input', renderTree);
@@ -837,7 +870,7 @@ const sdPromptLabWildcardEditor = (() => {
         getEl(ids.root)?.addEventListener('keydown', event => {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
                 event.preventDefault();
-                saveActiveFile(false);
+                saveFile(activeFile(), false);
             }
         });
     }
