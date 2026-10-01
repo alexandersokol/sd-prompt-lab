@@ -54,6 +54,8 @@ def init_db():
                     )
                 """)
         c.execute("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)")
+        # Words the user added to the spell-check dictionary.
+        c.execute("CREATE TABLE IF NOT EXISTS spell_words (word TEXT PRIMARY KEY)")
         conn.commit()
         migrate_add_favorite()
 
@@ -236,14 +238,24 @@ def clear_prompt_words():
         conn.commit()
 
 
+def add_spell_word(word: str):
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO spell_words (word) VALUES (?)", (word.strip().lower(),))
+        conn.commit()
+
+
 def known_prompt_words(words):
-    """Subset of `words` (lower-case) that appear as a word in the saved autocompletion prompts."""
+    """Subset of `words` (lower-case) the user already vouches for: words in the saved
+    autocompletion prompts, plus words added to the spell-check dictionary."""
     wanted = set(words)
     if not wanted:
         return set()
     known = set()
     with connect() as conn:
         c = conn.cursor()
+        c.execute("SELECT word FROM spell_words")
+        known.update(wanted.intersection(row[0] for row in c.fetchall()))
         c.execute("SELECT word FROM prompt_words")
         for (saved,) in c.fetchall():
             known.update(wanted.intersection(re.findall(r"[a-z]+", saved.lower())))
@@ -251,7 +263,12 @@ def known_prompt_words(words):
 
 
 # Known settings and their defaults; unknown keys are ignored on write.
-DEFAULT_SETTINGS = {"spell_check": True}
+DEFAULT_SETTINGS = {
+    "spell_check": True,
+    # False: completed tags are inserted A1111-style ("long hair", "artist \\(style\\)");
+    # True: exactly as stored in the tag dataset ("long_hair", "artist_(style)").
+    "tag_underscores": False,
+}
 
 
 def get_settings():

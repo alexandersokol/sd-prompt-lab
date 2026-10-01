@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import os
 import re
@@ -239,3 +240,34 @@ def list_wildcard_names(root: str) -> dict:
                 except Exception:
                     complete = False
     return {"exists": True, "complete": complete, "names": sorted(names)}
+
+
+def preview_wildcard(root: str, name: str, limit: int = 12) -> dict:
+    """First values of the .txt wildcard file(s) a name or glob refers to (hover preview)."""
+    name = (name or "").strip()
+    txt_names = []
+    if name and os.path.isdir(root):
+        for current, _, files in os.walk(root):
+            for file in files:
+                if file.endswith(".txt"):
+                    rel = os.path.relpath(os.path.join(current, file[:-4]), root).replace(os.sep, "/")
+                    txt_names.append(rel)
+    if any(ch in name for ch in "*?"):
+        matched = sorted(n for n in txt_names if fnmatch.fnmatchcase(n, name))
+    else:
+        matched = [name] if name in txt_names else []
+
+    lines, total = [], 0
+    for match in matched:
+        try:
+            with open(os.path.join(root, *match.split("/")) + ".txt", "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    total += 1
+                    if len(lines) < limit:
+                        lines.append(line)
+        except OSError:
+            continue
+    return {"files": matched, "lines": lines, "total": total}

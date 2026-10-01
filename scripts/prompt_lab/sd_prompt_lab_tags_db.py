@@ -641,6 +641,29 @@ def get_tag_detail(name):
         return {"name": row[0], "metadata": metadata, "sources": sources}
 
 
+def complete_tags(prefix, limit=20):
+    """Most popular non-deprecated tags starting with `prefix` (for editor completion).
+
+    Spaces match underscores. Read-only: never triggers a cache rebuild.
+    """
+    prefix = (prefix or "").strip().lower().replace(" ", "_")
+    if not prefix or not os.path.isfile(os.path.join(get_cache_dir(), _CACHE_DB_NAME)):
+        return []
+    try:
+        with connect() as conn:
+            c = conn.cursor()
+            # Range scan on the NOCASE primary key instead of LIKE '%x%' over millions of rows.
+            c.execute(
+                "SELECT name, post_count, category FROM tags "
+                "WHERE name >= ? AND name < ? AND is_deprecated = 0 "
+                "ORDER BY post_count DESC LIMIT ?",
+                (prefix, prefix + "\uffff", limit),
+            )
+            return [{"name": r[0], "post_count": r[1], "category": r[2]} for r in c.fetchall()]
+    except sqlite3.Error:
+        return []
+
+
 def known_tag_words(words):
     """Subset of `words` (lower-case) that the tag cache knows.
 

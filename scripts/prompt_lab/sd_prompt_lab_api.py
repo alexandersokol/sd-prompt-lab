@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import scripts.prompt_lab.sd_prompt_lab_db as db
+import scripts.prompt_lab.sd_prompt_lab_sampler as sampler
 import scripts.prompt_lab.sd_prompt_lab_tags_db as tags_db
 import scripts.prompt_lab.sd_prompt_lab_tag_presets as tag_presets
 import scripts.prompt_lab.sd_prompt_lab_validator_db as validator_db
@@ -61,6 +62,15 @@ class PromptWordUpdate(BaseModel):
 
 class SpellCheckRequest(BaseModel):
     words: list[str]
+
+
+class SpellWordRequest(BaseModel):
+    word: str
+
+
+class SampleRequest(BaseModel):
+    prompt: str
+    count: int = 5
 
 
 class ValidatorCardsCreate(BaseModel):
@@ -152,6 +162,33 @@ def _download_remote_image(url: str, pics_dir: str) -> str:
                 os.remove(temp_path)
                 raise
     return temp_path
+
+
+_LORA_EXTS = (".safetensors", ".pt", ".ckpt")
+
+
+def _list_lora_names():
+    """Names usable in <lora:NAME:1>. Empty outside a WebUI (or without the Lora extension)."""
+    try:
+        import networks  # extensions-builtin/Lora
+        if not networks.available_networks:
+            networks.list_available_networks()
+        return sorted(networks.available_networks.keys(), key=str.lower)
+    except Exception:
+        pass
+    try:
+        from modules import shared
+        lora_dir = getattr(shared.cmd_opts, "lora_dir", None)
+    except Exception:
+        lora_dir = None
+    names = set()
+    if lora_dir and os.path.isdir(lora_dir):
+        for _, _, files in os.walk(lora_dir):
+            for name in files:
+                base, ext = os.path.splitext(name)
+                if ext.lower() in _LORA_EXTS:
+                    names.add(base)
+    return sorted(names, key=str.lower)
 
 
 # Static files the browser loads; their mtimes become cache-busting versions (?v=<mtime>).
@@ -498,6 +535,45 @@ def init_api(app: FastAPI):
         db.set_settings(values)
         return db.get_settings()
 
+    # Editor completion: the user's saved words first, then popular tags by prefix.
+    @app.get("/sd-prompt-lab/complete")
+    def complete(q: str = Query(""), limit: int = Query(20)):
+        q = q.strip()
+        if len(q) < 2:
+            return {"items": []}
+        limit = max(1, min(limit, 50))
+        items, seen = [], set()
+        for word in db.search_prompt_words(q, limit=8):
+            seen.add(word.lower().replace(" ", "_"))
+            items.append({"label": word, "kind": "saved", "count": None, "category": None})
+        for tag in tags_db.complete_tags(q, limit=limit):
+            if tag["name"].lower() in seen:
+                continue
+            items.append({"label": tag["name"], "kind": "tag",
+                          "count": tag["post_count"], "category": tag["category"]})
+        return {"items": items[:limit]}
+
+    @app.get("/sd-prompt-lab/loras")
+    def get_loras():
+        return {"names": _list_lora_names()}
+
+    @app.post("/sd-prompt-lab/spell/words")
+    def add_spell_word(data: SpellWordRequest):
+        word = data.word.strip().lower()
+        if not word:
+            raise HTTPException(status_code=400, detail="Word cannot be empty")
+        db.add_spell_word(word)
+        return {"status": "ok", "word": word}
+
+    @app.post("/sd-prompt-lab/sample")
+    def sample(data: SampleRequest):
+        try:
+            return {"samples": sampler.sample_prompt(data.prompt, data.count, _wildcards_root())}
+        except sampler.SamplerUnavailable as e:
+            raise HTTPException(status_code=501, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Could not expand the prompt: {e}")
+
     # Second-stage spell check: the editor sends words its English word list does not know;
     # words found in the tag cache or the saved autocompletion prompts are accepted.
     @app.post("/sd-prompt-lab/spell/check")
@@ -534,6 +610,10 @@ def init_api(app: FastAPI):
             return {"tree": []}
 
         return {"tree": _build_wildcards_editor_tree(root)}
+
+    @app.get("/sd-prompt-lab/wildcards/preview")
+    def get_wildcard_preview(name: str = Query(...)):
+        return utils.preview_wildcard(_wildcards_root(), name)
 
     @app.get("/sd-prompt-lab/wildcards/names")
     def get_wildcard_names():
