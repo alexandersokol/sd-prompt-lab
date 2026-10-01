@@ -27362,6 +27362,10 @@
       ];
   }
 
+  // CodeMirror owns the editor's `class` attribute and rewrites it (on focus, for one),
+  // so a class added with classList is lost. It has to come from the state.
+  const editorClass = (name) => EditorView.editorAttributes.of({class: name});
+
   const CREATE_HEIGHT_KEY = "sd-prompt-lab:create-height";
   const CREATE_MIN_HEIGHT = 360;
   const CREATE_BOTTOM_GAP = 24;   // breathing room between the editor and the window edge
@@ -27378,10 +27382,13 @@
       const view = new EditorView({
           state: EditorState.create({
               doc: textarea.value,
-              extensions: editorExtensions({
-                  language: {mode: "prompt", spellCheck: true, statusBar: true},
-                  onSave
-              })
+              extensions: [
+                  editorClass("sd-prompt-lab-create-codemirror"),
+                  ...editorExtensions({
+                      language: {mode: "prompt", spellCheck: true, statusBar: true},
+                      onSave
+                  })
+              ]
           }),
           parent: textarea.parentNode
       });
@@ -27389,7 +27396,6 @@
       // The editor fills the space from its top edge down to the bottom of the window.
       // Dragging the resize handle sets an inline height instead, which is remembered;
       // double-clicking the handle corner goes back to filling.
-      view.dom.classList.add("sd-prompt-lab-create-codemirror");
       const fitHeight = () => {
           const rect = view.dom.getBoundingClientRect();
           if (!rect.width) return;    // tab is hidden; measured again once it is shown
@@ -27433,7 +27439,10 @@
   } = {}) => {
       return EditorState.create({
           doc,
-          extensions: editorExtensions({language: {mode, spellCheck, statusBar}, onChange, onSave})
+          extensions: [
+              editorClass("sd-prompt-lab-wildcard-codemirror"),
+              ...editorExtensions({language: {mode, spellCheck, statusBar}, onChange, onSave})
+          ]
       });
   };
 
@@ -27447,7 +27456,6 @@
           parent
       });
 
-      view.dom.classList.add("sd-prompt-lab-wildcard-codemirror");
       return view;
   };
 
@@ -27461,6 +27469,7 @@
           state: EditorState.create({
               doc,
               extensions: [
+                  editorClass("sd-prompt-lab-readonly-codemirror"),
                   oneDark,
                   EditorView.lineWrapping,
                   EditorState.readOnly.of(true),
@@ -27472,7 +27481,6 @@
           parent
       });
 
-      view.dom.classList.add("sd-prompt-lab-readonly-codemirror");
       return view;
   };
 

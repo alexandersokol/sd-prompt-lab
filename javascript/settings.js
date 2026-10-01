@@ -331,9 +331,9 @@
     // Reload on every visit: new words appear whenever a prompt is saved in Create.
     async function open() {
         if (!$(ids.root)) return;
+        ensureAssets();   // on every visit: a stylesheet that failed to load is retried
         if (!state.initialized) {
             state.initialized = true;
-            ensureAssets();
             wireEvents();
         }
         try {

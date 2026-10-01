@@ -1033,9 +1033,9 @@
     }
 
     async function init() {
+        ensureAssets();   // on every visit: a stylesheet that failed to load is retried
         if (state.initialized || !$(ids.root)) return;
         state.initialized = true;
-        ensureAssets();
         bindEvents();
         try {
             await loadState();

@@ -607,12 +607,12 @@
     }
 
     async function init(force) {
+        ensureAssets();   // on every visit: a stylesheet that failed to load is retried
         if (state.initialized && !force) return;
         const root = $(ids.root);
         if (!root) return;
 
         if (!state.initialized) {
-            ensureAssets();
             wireEvents();
             state.initialized = true;
         }

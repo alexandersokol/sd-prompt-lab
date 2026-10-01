@@ -3,6 +3,12 @@
     display: none !important;
 }
 
+/* Gradio colours every descendant of an HTML block (`.prose *`), which stops icons and
+   labels from following their button's colour. */
+#sd-prompt-lab-settings-root :is(button, a) * {
+    color: inherit;
+}
+
 #sd-prompt-lab-settings-root {
     --spl-border: var(--border-color-primary, #444);
     --spl-panel: var(--background-fill-secondary, rgba(255, 255, 255, 0.03));

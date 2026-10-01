@@ -1,13 +1,14 @@
-/* Browse tab. Palette and .spl-btn come from spl_common.css (.spl-theme). */
+/* Browse tab. Palette and .spl-btn come from spl_common.css (.spl-theme).
+   Rules are scoped by the root id so Gradio's element resets cannot outrank them. */
 
-.spl-browse {
+#sd-prompt-lab-browse-root {
     display: flex;
     flex-direction: column;
     gap: 14px;
 }
 
 /* ---- toolbar ---------------------------------------------------------------------- */
-.spl-browse-toolbar {
+#sd-prompt-lab-browse-root .spl-browse-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -18,7 +19,7 @@
     background: var(--spl-panel);
 }
 
-.spl-browse-search {
+#sd-prompt-lab-browse-root .spl-browse-search {
     flex: 1 1 260px;
     display: flex;
     align-items: center;
@@ -31,16 +32,16 @@
     color: var(--spl-subtle);
 }
 
-.spl-browse-search:focus-within {
+#sd-prompt-lab-browse-root .spl-browse-search:focus-within {
     border-color: var(--spl-accent);
     box-shadow: 0 0 0 3px rgba(99, 168, 255, 0.12);
 }
 
-.spl-browse-search .material-symbols-rounded {
+#sd-prompt-lab-browse-root .spl-browse-search .material-symbols-rounded {
     font-size: 18px;
 }
 
-.spl-browse-search input {
+#sd-prompt-lab-browse-root .spl-browse-search input {
     flex: 1;
     min-width: 0;
     height: 100%;
@@ -51,18 +52,18 @@
     font-size: 13px;
 }
 
-.spl-browse-search input::placeholder {
+#sd-prompt-lab-browse-root .spl-browse-search input::placeholder {
     color: var(--spl-subtle);
 }
 
-.spl-browse-sort {
+#sd-prompt-lab-browse-root .spl-browse-sort {
     display: flex;
     align-items: center;
     gap: 6px;
     color: var(--spl-muted);
 }
 
-.spl-browse-sort select {
+#sd-prompt-lab-browse-root .spl-browse-sort select {
     height: 34px;
     padding: 0 8px;
     border: 1px solid var(--spl-line-strong);
@@ -72,7 +73,7 @@
     font-size: 13px;
 }
 
-.spl-browse-count {
+#sd-prompt-lab-browse-root .spl-browse-count {
     margin-left: auto;
     color: var(--spl-muted);
     font-variant-numeric: tabular-nums;
@@ -80,14 +81,14 @@
 }
 
 /* ---- grid and cards --------------------------------------------------------------- */
-.spl-browse-grid {
+#sd-prompt-lab-browse-root .spl-browse-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 14px;
     align-items: start;
 }
 
-.spl-card {
+#sd-prompt-lab-browse-root .spl-card {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -99,32 +100,30 @@
     transition: border-color 0.15s;
 }
 
-.spl-card:hover {
+#sd-prompt-lab-browse-root .spl-card:hover {
     border-color: #46607f;
 }
 
-.spl-card-header {
+#sd-prompt-lab-browse-root .spl-card-header {
     display: flex;
     align-items: flex-start;
     gap: 8px;
 }
 
-.spl-card-title {
+#sd-prompt-lab-browse-root .spl-card-title {
     flex: 1;
     min-width: 0;
     margin: 0;
     color: #eef3f9;
     font-size: 15px;
     font-weight: 650;
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    line-height: 28px;
     overflow: hidden;
-    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.spl-card-fav {
+#sd-prompt-lab-browse-root .spl-card-fav {
     flex: 0 0 auto;
     width: 28px;
     height: 28px;
@@ -138,47 +137,57 @@
     cursor: pointer;
 }
 
-.spl-card-fav .material-symbols-rounded {
+#sd-prompt-lab-browse-root .spl-card-fav .material-symbols-rounded {
     font-size: 19px;
 }
 
-.spl-card-fav:hover {
+#sd-prompt-lab-browse-root .spl-card-fav:hover {
     color: var(--spl-text);
     background: var(--spl-panel-3);
 }
 
-.spl-card-fav[aria-pressed="true"] {
+#sd-prompt-lab-browse-root .spl-card-fav[aria-pressed="true"] {
     color: #ff6b81;
 }
 
-.spl-card.is-favorite {
+#sd-prompt-lab-browse-root .spl-card.is-favorite {
     border-color: rgba(255, 107, 129, 0.45);
 }
 
-.spl-card-desc {
+/* Every card has the same height: one title line, one description line (kept, empty,
+   when there is none), a fixed-height prompt excerpt and the action row. */
+#sd-prompt-lab-browse-root .spl-card-desc {
+    height: 18px;
     color: var(--spl-muted);
     font-size: 12.5px;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    line-height: 18px;
     overflow: hidden;
-    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.spl-card-body {
+#sd-prompt-lab-browse-root .spl-card-body {
     display: flex;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 10px;
+    height: 124px;   /* 6 excerpt lines of 18px + padding */
 }
 
-.spl-card-prompt {
+#sd-prompt-lab-browse-root .spl-card-prompt {
     flex: 1;
     min-width: 0;
+    box-sizing: border-box;
     padding: 8px 10px;
     border-radius: 7px;
     background: var(--spl-editor);
     color: #c7d1de;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+/* Clamped on an inner element: with padding on the clamped box itself, part of the
+   next line shows in the bottom padding. */
+#sd-prompt-lab-browse-root .spl-card-prompt-text {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
@@ -188,29 +197,28 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 6;
     overflow: hidden;
-    cursor: pointer;
 }
 
-.spl-card-thumb {
+#sd-prompt-lab-browse-root .spl-card-thumb {
     flex: 0 0 auto;
-    width: 84px;
-    height: 118px;
+    width: 88px;
+    height: 100%;
     object-fit: cover;
     border-radius: 7px;
     background: #0a111b;
 }
 
-.spl-card-actions {
+#sd-prompt-lab-browse-root .spl-card-actions {
     display: flex;
     align-items: center;
     gap: 4px;
 }
 
-.spl-card-spacer {
+#sd-prompt-lab-browse-root .spl-card-spacer {
     flex: 1;
 }
 
-.spl-card-btn {
+#sd-prompt-lab-browse-root .spl-card-btn {
     height: 30px;
     min-width: 30px;
     padding: 0;
@@ -226,40 +234,40 @@
     cursor: pointer;
 }
 
-.spl-card-btn .material-symbols-rounded {
+#sd-prompt-lab-browse-root .spl-card-btn .material-symbols-rounded {
     font-size: 18px;
 }
 
-.spl-card-btn:hover {
+#sd-prompt-lab-browse-root .spl-card-btn:hover {
     color: var(--spl-text);
     border-color: var(--spl-line-strong);
     background: var(--spl-panel-3);
 }
 
-.spl-card-btn:focus-visible,
-.spl-card-fav:focus-visible {
+#sd-prompt-lab-browse-root .spl-card-btn:focus-visible,
+#sd-prompt-lab-browse-root .spl-card-fav:focus-visible {
     outline: 2px solid var(--spl-accent);
     outline-offset: 1px;
 }
 
-.spl-card-btn-wide {
+#sd-prompt-lab-browse-root .spl-card-btn-wide {
     padding: 0 10px;
     border-color: var(--spl-line-strong);
     background: var(--spl-panel-3);
     color: var(--spl-text);
 }
 
-.spl-card-btn-wide:hover {
+#sd-prompt-lab-browse-root .spl-card-btn-wide:hover {
     border-color: var(--spl-accent);
 }
 
-.spl-card-btn[data-action="remove"]:hover {
+#sd-prompt-lab-browse-root .spl-card-btn[data-action="remove"]:hover {
     color: var(--spl-error);
     border-color: var(--spl-error);
 }
 
 /* ---- empty state ------------------------------------------------------------------ */
-.spl-browse-empty {
+#sd-prompt-lab-browse-root .spl-browse-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -271,17 +279,17 @@
     text-align: center;
 }
 
-.spl-browse-empty .material-symbols-rounded {
+#sd-prompt-lab-browse-root .spl-browse-empty .material-symbols-rounded {
     font-size: 36px;
     color: var(--spl-subtle);
 }
 
-.spl-browse-empty-title {
+#sd-prompt-lab-browse-root .spl-browse-empty-title {
     color: var(--spl-text);
     font-size: 15px;
     font-weight: 600;
 }
 
-.spl-browse-more {
+#sd-prompt-lab-browse-root .spl-browse-more {
     height: 1px;
 }

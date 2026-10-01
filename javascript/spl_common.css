@@ -224,7 +224,15 @@
     display: none !important;
 }
 
-.spl-theme .spl-btn {
+/* Gradio colours every descendant of an HTML block (`.prose *`), which stops icons and
+   labels from following their button's colour. */
+.spl-theme.spl-theme :is(button, a) * {
+    color: inherit;
+}
+
+/* `.spl-theme` is doubled on the controls below: Gradio resets buttons and inputs with
+   `.gradio-container [type="button"]`, which would otherwise tie and win by order. */
+.spl-theme.spl-theme .spl-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -242,64 +250,64 @@
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.spl-theme .spl-btn .material-symbols-rounded {
+.spl-theme.spl-theme .spl-btn .material-symbols-rounded {
     font-size: 18px;
 }
 
-.spl-theme .spl-btn:hover {
+.spl-theme.spl-theme .spl-btn:hover {
     border-color: var(--spl-accent);
 }
 
-.spl-theme .spl-btn:focus-visible,
-.spl-theme .spl-input:focus-visible {
+.spl-theme.spl-theme .spl-btn:focus-visible,
+.spl-theme.spl-theme .spl-input:focus-visible {
     outline: 2px solid var(--spl-accent);
     outline-offset: 1px;
 }
 
-.spl-theme .spl-btn-primary {
+.spl-theme.spl-theme .spl-btn-primary {
     border-color: var(--spl-accent-strong);
     background: var(--spl-accent-strong);
     color: #fff;
     font-weight: 600;
 }
 
-.spl-theme .spl-btn-primary:hover {
+.spl-theme.spl-theme .spl-btn-primary:hover {
     filter: brightness(1.08);
 }
 
-.spl-theme .spl-btn-danger:hover {
+.spl-theme.spl-theme .spl-btn-danger:hover {
     border-color: var(--spl-error);
     color: var(--spl-error);
 }
 
-.spl-theme .spl-btn-block {
+.spl-theme.spl-theme .spl-btn-block {
     width: 100%;
     min-height: 40px;
     font-size: 14px;
 }
 
-.spl-theme .spl-btn-icon {
+.spl-theme.spl-theme .spl-btn-icon {
     padding: 0;
     width: 34px;
 }
 
-.spl-theme .spl-btn[aria-pressed="true"] {
+.spl-theme.spl-theme .spl-btn[aria-pressed="true"] {
     border-color: var(--spl-accent);
     background: var(--spl-accent-soft);
     color: var(--spl-accent);
 }
 
-.spl-theme .spl-btn-row {
+.spl-theme.spl-theme .spl-btn-row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
 
-.spl-theme .spl-btn-row .spl-btn {
+.spl-theme.spl-theme .spl-btn-row .spl-btn {
     flex: 1 1 auto;
 }
 
-.spl-theme .spl-input {
+.spl-theme.spl-theme .spl-input {
     width: 100%;
     box-sizing: border-box;
     padding: 8px 10px;
@@ -311,22 +319,22 @@
     line-height: 1.4;
 }
 
-.spl-theme textarea.spl-input {
+.spl-theme.spl-theme textarea.spl-input {
     resize: vertical;
     min-height: 54px;
 }
 
-.spl-theme .spl-input::placeholder {
+.spl-theme.spl-theme .spl-input::placeholder {
     color: var(--spl-subtle);
 }
 
-.spl-theme .spl-input:focus {
+.spl-theme.spl-theme .spl-input:focus {
     border-color: var(--spl-accent);
     outline: none;
     box-shadow: 0 0 0 3px rgba(99, 168, 255, 0.12);
 }
 
-.spl-theme .spl-link-btn {
+.spl-theme.spl-theme .spl-link-btn {
     padding: 0;
     border: 0;
     background: none;
@@ -335,7 +343,7 @@
     cursor: pointer;
 }
 
-.spl-theme .spl-link-btn:hover {
+.spl-theme.spl-theme .spl-link-btn:hover {
     text-decoration: underline;
 }
 

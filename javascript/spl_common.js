@@ -129,15 +129,19 @@
     }
 
     // Runs `callback` every time the tab is opened. Gradio re-creates a tab's button when
-    // its selected state changes, so the listener sits on the (stable) nav container.
+    // its selected state changes, so the listener sits on the (stable) nav container. It
+    // listens in the capture phase: by the time the click bubbles up, Gradio may already
+    // have replaced the clicked button, and its position could no longer be told.
     function onTabOpened(panelId, callback) {
         const parts = tabParts(panelId);
         if (!parts) return false;
         parts.nav.addEventListener('click', (event) => {
-            const button = event.target.closest('button');
+            const button = event.target.closest?.('button');
             if (!button || !parts.nav.contains(button)) return;
-            if (Array.from(parts.nav.querySelectorAll('button')).indexOf(button) === parts.index) callback();
-        });
+            if (Array.from(parts.nav.querySelectorAll('button')).indexOf(button) !== parts.index) return;
+            // Run once Gradio has shown the panel.
+            setTimeout(callback, 0);
+        }, true);
         return true;
     }
 

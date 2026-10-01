@@ -45,12 +45,13 @@
     }
 
     function cardHtml(p) {
-        const thumb = p.image_path
+        // image_version is set only when the image file exists.
+        const thumb = p.image_version
             ? `<img class="spl-card-thumb" loading="lazy" alt="" src="${API}/thumbnail/${p.id}?v=${p.image_version || 0}">`
             : '';
         return `
             <article class="spl-card${p.is_favorite ? ' is-favorite' : ''}" data-id="${p.id}">
-                <header class="spl-card-header">
+                <div class="spl-card-header">
                     <h3 class="spl-card-title" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</h3>
                     <button type="button" class="spl-card-fav" data-action="favorite"
                             aria-pressed="${p.is_favorite ? 'true' : 'false'}"
@@ -58,13 +59,15 @@
                             aria-label="Favourite">
                         <span class="material-symbols-rounded" aria-hidden="true">favorite</span>
                     </button>
-                </header>
-                ${p.description ? `<div class="spl-card-desc">${escapeHtml(p.description)}</div>` : ''}
+                </div>
+                <div class="spl-card-desc" title="${escapeHtml(p.description || '')}">${escapeHtml(p.description || '')}</div>
                 <div class="spl-card-body">
-                    <div class="spl-card-prompt spl-highlight" data-action="preview" title="Click to preview">${highlight(p.prompt)}</div>
+                    <div class="spl-card-prompt" data-action="preview" title="Click to preview">
+                        <div class="spl-card-prompt-text spl-highlight">${highlight(p.prompt)}</div>
+                    </div>
                     ${thumb}
                 </div>
-                <footer class="spl-card-actions">
+                <div class="spl-card-actions">
                     <button type="button" class="spl-card-btn spl-card-btn-wide" data-action="txt2img" title="Send to txt2img">
                         <span class="material-symbols-rounded" aria-hidden="true">image</span><span>txt2img</span>
                     </button>
@@ -73,7 +76,7 @@
                     ${iconButton('copy', 'content_copy', 'Copy prompt')}
                     <span class="spl-card-spacer"></span>
                     ${iconButton('remove', 'delete', 'Delete')}
-                </footer>
+                </div>
             </article>`;
     }
 
@@ -231,9 +234,10 @@
 
     async function open() {
         if (!$(ids.root)) return;
+        // Asked for on every visit: a stylesheet that failed to load is retried.
+        window.spl.loadStyle('sd-prompt-lab-browse-style', 'javascript/browse.css').catch((e) => console.error(e));
         if (!state.initialized) {
             state.initialized = true;
-            window.spl.loadStyle('sd-prompt-lab-browse-style', 'javascript/browse.css').catch((e) => console.error(e));
             wireEvents();
             // The highlighter ships in the editor bundle; cards fall back to plain text without it.
             await window.spl.loadCodeMirror().catch((e) => console.error(e));
