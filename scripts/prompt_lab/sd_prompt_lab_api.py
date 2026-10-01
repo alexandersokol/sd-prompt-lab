@@ -1,13 +1,16 @@
+import base64
+import binascii
 import mimetypes
 import os
 import re
 import shutil
 import tempfile
 import threading
+import time
 
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import scripts.prompt_lab.sd_prompt_lab_db as db
@@ -35,6 +38,13 @@ class PromptData(BaseModel):
     image_path: str | None = None
     prompt: str = Field(..., description="Comma-separated prompts")
     override: bool = False
+    # With override: drop the prompt's current image (an empty image_path keeps it).
+    remove_image: bool = False
+
+
+class PromptImportRequest(BaseModel):
+    data: dict
+    on_conflict: str = "skip"   # 'skip' | 'overwrite'
 
 
 class WildcardSaveRequest(BaseModel):
@@ -131,6 +141,90 @@ def _build_wildcards_editor_tree(directory, base=""):
                 "size": stat.st_size,
                 "modified": stat.st_mtime
             })
+    return result
+
+
+def _thumbnail_path(prompt_id: int) -> str:
+    return os.path.join(env.script_dir, "pics", f"{prompt_id}.png")
+
+
+def _remove_prompt_image(prompt_id: int):
+    db.clear_prompt_image(prompt_id)
+    path = _thumbnail_path(prompt_id)
+    if os.path.isfile(path):
+        os.remove(path)
+
+
+def _forget_words_of(deleted_prompt_text: str):
+    """Drop autocompletion words that only the just-deleted prompt contributed."""
+    candidates = utils.parse_prompts(deleted_prompt_text)
+    if not candidates:
+        return
+    still_used = set()
+    for prompt in db.get_all_prompts():
+        still_used.update(w.lower() for w in utils.parse_prompts(prompt["prompt"]))
+    db.delete_prompt_words([w for w in candidates if w.lower() not in still_used])
+
+
+EXPORT_VERSION = 1
+
+
+def _export_prompts() -> dict:
+    prompts = []
+    # Favourites, then oldest first, so importing recreates a familiar order.
+    for prompt in db.get_all_prompts(sort="oldest"):
+        image = None
+        path = prompt.get("image_path")
+        if path and os.path.isfile(path):
+            with open(path, "rb") as f:
+                image = base64.b64encode(f.read()).decode("ascii")
+        prompts.append({
+            "name": prompt["name"],
+            "description": prompt["description"],
+            "prompt": prompt["prompt"],
+            "is_favorite": bool(prompt["is_favorite"]),
+            "image": image,
+        })
+    return {"version": EXPORT_VERSION, "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "prompts": prompts}
+
+
+def _import_prompts(data: dict, on_conflict: str) -> dict:
+    if data.get("version") != EXPORT_VERSION or not isinstance(data.get("prompts"), list):
+        raise ValueError("Not a Prompt Lab export file (expected version 1 with a 'prompts' list)")
+    if on_conflict not in ("skip", "overwrite"):
+        raise ValueError("on_conflict must be 'skip' or 'overwrite'")
+
+    result = {"created": 0, "updated": 0, "skipped": 0}
+    for item in data["prompts"]:
+        name = item.get("name") if isinstance(item, dict) else None
+        text = item.get("prompt") if isinstance(item, dict) else None
+        if not isinstance(name, str) or not name.strip() or not isinstance(text, str) or not text.strip():
+            result["skipped"] += 1
+            continue
+        description = item.get("description") if isinstance(item.get("description"), str) else None
+
+        existing = db.get_prompt_by_name(name)
+        if existing and on_conflict == "skip":
+            result["skipped"] += 1
+            continue
+        prompt_id = db.save_or_update_prompt(
+            {"name": name, "description": description, "prompt": text, "override": True})
+        result["updated" if existing else "created"] += 1
+        db.set_prompt_favorite(prompt_id, bool(item.get("is_favorite")))
+        db.insert_prompt_words_list(utils.parse_prompts(text))
+
+        image = item.get("image")
+        if isinstance(image, str) and image:
+            try:
+                raw = base64.b64decode(image, validate=True)
+            except (binascii.Error, ValueError):
+                raw = None
+            if raw:
+                os.makedirs(os.path.join(env.script_dir, "pics"), exist_ok=True)
+                path = _thumbnail_path(prompt_id)
+                with open(path, "wb") as f:
+                    f.write(raw)
+                db.update_prompt_image_path(prompt_id, path)
     return result
 
 
@@ -249,9 +343,11 @@ def init_api(app: FastAPI):
             prompts_list = utils.parse_prompts(data.prompt)
             db.insert_prompt_words_list(prompts_list)
 
-            # Handle image
-            if data.image_path:
-                image_path = data.image_path
+            # Image: a new path/URL replaces the thumbnail, remove_image drops it, and an
+            # empty path keeps whatever the prompt already has.
+            image_warning = None
+            image_path = (data.image_path or "").strip()
+            if image_path:
                 is_remote = image_path.startswith("http://") or image_path.startswith("https://")
 
                 if is_remote:
@@ -269,8 +365,12 @@ def init_api(app: FastAPI):
 
                 if thumbnail_path:
                     db.update_prompt_image_path(prompt_id, thumbnail_path)
+                else:
+                    image_warning = "The prompt was saved, but the image could not be read (png, jpg or webp expected)."
+            elif data.remove_image:
+                _remove_prompt_image(prompt_id)
 
-            return {"status": "ok", "id": prompt_id}
+            return {"status": "ok", "id": prompt_id, "image_warning": image_warning}
         except HTTPException:
             raise
         except Exception as e:
@@ -300,18 +400,35 @@ def init_api(app: FastAPI):
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/sd-prompt-lab/all")
-    async def get_all_prompts(search: str = None):
+    async def get_all_prompts(search: str = None, sort: str = "newest", favorites: bool = False,
+                              limit: int = None, offset: int = 0):
         try:
-            prompts = db.get_all_prompts(search)
+            search = (search or "").strip() or None
+            if limit is not None:
+                limit = max(1, min(limit, 200))
+            prompts = db.get_all_prompts(search, sort=sort, favorites=favorites,
+                                         limit=limit, offset=max(0, offset))
             for prompt in prompts:
                 # Changes whenever the thumbnail file is replaced (cache-busting for cards).
                 try:
                     prompt["image_version"] = int(os.path.getmtime(prompt["image_path"]))
                 except (OSError, TypeError):
                     prompt["image_version"] = None
-            return {"prompts": prompts}
+            return {"prompts": prompts, "total": db.count_prompts(search, favorites=favorites)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/sd-prompt-lab/export")
+    def export_prompts():
+        return JSONResponse(_export_prompts(), headers={
+            "Content-Disposition": 'attachment; filename="sd-prompt-lab-prompts.json"'})
+
+    @app.post("/sd-prompt-lab/import")
+    def import_prompts(request: PromptImportRequest):
+        try:
+            return _import_prompts(request.data, request.on_conflict)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.delete("/sd-prompt-lab/delete/{prompt_id}")
     async def delete_prompt(prompt_id: int):
@@ -321,8 +438,9 @@ def init_api(app: FastAPI):
                 raise HTTPException(status_code=404, detail="Prompt not found")
 
             db.delete_prompt_by_id(prompt_id)
+            _forget_words_of(prompt["prompt"])
 
-            thumb_path = os.path.join(env.script_dir, "pics", f"{prompt_id}.png")
+            thumb_path = _thumbnail_path(prompt_id)
             if os.path.isfile(thumb_path):
                 os.remove(thumb_path)
 

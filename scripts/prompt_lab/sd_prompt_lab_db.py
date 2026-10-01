@@ -81,23 +81,26 @@ def update_prompt_image_path(prompt_id: int, new_path: str):
 
 
 def save_or_update_prompt(data: dict):
+    """Insert a prompt, or update the one with the same name when data['override'] is set.
+
+    The image is not touched here: thumbnails are attached with update_prompt_image_path()
+    and removed with clear_prompt_image(), so an update keeps the existing image.
+    """
     existing = get_prompt_by_name(data["name"])
     with connect() as conn:
         c = conn.cursor()
         if existing and data.get("override", False):
-            # Update existing
             c.execute("""
-                UPDATE prompts 
-                SET description = ?, image_path = ?, prompt = ?
+                UPDATE prompts
+                SET description = ?, prompt = ?
                 WHERE id = ?
-            """, (data.get("description"), data.get("image_path"), data["prompt"], existing["id"]))
+            """, (data.get("description"), data["prompt"], existing["id"]))
             prompt_id = existing["id"]
         elif not existing:
-            # Insert new
             c.execute("""
-                INSERT INTO prompts (name, description, image_path, prompt)
-                VALUES (?, ?, ?, ?)
-            """, (data["name"], data.get("description"), data.get("image_path"), data["prompt"]))
+                INSERT INTO prompts (name, description, prompt)
+                VALUES (?, ?, ?)
+            """, (data["name"], data.get("description"), data["prompt"]))
             prompt_id = c.lastrowid
         else:
             # Existing and override=False
@@ -105,6 +108,13 @@ def save_or_update_prompt(data: dict):
 
         conn.commit()
         return prompt_id
+
+
+def clear_prompt_image(prompt_id: int):
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("UPDATE prompts SET image_path = NULL WHERE id = ?", (prompt_id,))
+        conn.commit()
 
 
 def get_prompt_by_name(name: str):
@@ -150,24 +160,40 @@ def delete_prompt_by_id(prompt_id: int):
         conn.commit()
 
 
-def get_all_prompts(search: str = None):
+_PROMPT_SORTS = {
+    "newest": "id DESC",
+    "oldest": "id ASC",
+    "name": "name COLLATE NOCASE ASC",
+}
+
+
+def _prompt_filters(search, favorites):
+    where, params = [], []
+    if search:
+        like = f"%{search}%"
+        where.append("(name LIKE ? OR prompt LIKE ? OR description LIKE ?)")
+        params += [like, like, like]
+    if favorites:
+        where.append("is_favorite = 1")
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
+
+def get_all_prompts(search: str = None, sort: str = "newest", favorites: bool = False,
+                    limit: int = None, offset: int = 0):
+    """Saved prompts, favourites first within the chosen order. `limit=None` returns all."""
+    clause, params = _prompt_filters(search, favorites)
+    order = _PROMPT_SORTS.get(sort, _PROMPT_SORTS["newest"])
+    sql = f"""
+        SELECT id, name, description, image_path, prompt, is_favorite
+        FROM prompts{clause}
+        ORDER BY is_favorite DESC, {order}
+    """
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params += [limit, offset]
     with connect() as conn:
         c = conn.cursor()
-        if search:
-            like = f"%{search}%"
-            c.execute("""
-                        SELECT id, name, description, image_path, prompt, is_favorite 
-                        FROM prompts 
-                        WHERE name LIKE ? OR prompt LIKE ?
-                        ORDER BY is_favorite DESC, id DESC
-                    """, (like, like))
-        else:
-            c.execute("""
-                        SELECT id, name, description, image_path, prompt, is_favorite 
-                        FROM prompts 
-                        ORDER BY is_favorite DESC, id DESC
-                    """)
-        rows = c.fetchall()
+        c.execute(sql, params)
         return [
             {
                 "id": row[0],
@@ -177,8 +203,16 @@ def get_all_prompts(search: str = None):
                 "prompt": row[4],
                 "is_favorite": row[5]
             }
-            for row in rows
+            for row in c.fetchall()
         ]
+
+
+def count_prompts(search: str = None, favorites: bool = False):
+    clause, params = _prompt_filters(search, favorites)
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM prompts{clause}", params)
+        return c.fetchone()[0]
 
 
 def set_prompt_favorite(prompt_id: int, is_favorite: bool):
@@ -228,6 +262,16 @@ def delete_prompt_word(word_id: int):
     with connect() as conn:
         c = conn.cursor()
         c.execute("DELETE FROM prompt_words WHERE id = ?", (word_id,))
+        conn.commit()
+
+
+def delete_prompt_words(words):
+    """Remove the given autocompletion words (case-insensitive)."""
+    if not words:
+        return
+    with connect() as conn:
+        c = conn.cursor()
+        c.executemany("DELETE FROM prompt_words WHERE word = ? COLLATE NOCASE", [(w,) for w in words])
         conn.commit()
 
 
