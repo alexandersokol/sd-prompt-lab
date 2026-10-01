@@ -131,7 +131,7 @@ def _clean_word(candidate: str):
     # A1111 weight suffix: "(tag:1.2)" -> "(tag)".
     candidate = re.sub(r":\s*-?\d*\.?\d+(?=\s*[)\]]|\s*$)", "", candidate)
     candidate = re.sub(r"[()\[\]{}<>]", " ", candidate)
-    candidate = re.sub(r"\s+", " ", candidate).strip(" \t.;\\")
+    candidate = re.sub(r"\s+", " ", candidate).strip(" \t.;\\\"'`")
     if not candidate or len(candidate) > _MAX_WORD_LENGTH:
         return None
     if re.fullmatch(r"[\d.\s]+", candidate):
