@@ -1,0 +1,378 @@
+/* Re-assert the UA [hidden] rule so flex/grid display rules don't override it. */
+#sd-prompt-lab-settings-root [hidden] {
+    display: none !important;
+}
+
+#sd-prompt-lab-settings-root {
+    --spl-border: var(--border-color-primary, #444);
+    --spl-panel: var(--background-fill-secondary, rgba(255, 255, 255, 0.03));
+    --spl-panel-2: var(--background-fill-primary, rgba(255, 255, 255, 0.05));
+    --spl-text: var(--body-text-color, #dcdcdc);
+    --spl-muted: var(--body-text-color-subdued, #9a9a9a);
+    --spl-accent: var(--color-accent, #4a9eff);
+    --spl-green: #4ade80;
+    --spl-red: #f87171;
+    position: relative;
+    color: var(--spl-text);
+    font-size: 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    #sd-prompt-lab-settings-root {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+#sd-prompt-lab-settings-root .spl-set-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--spl-border);
+    border-radius: 12px;
+    background: var(--spl-panel);
+    min-width: 0;
+}
+
+#sd-prompt-lab-settings-root .spl-set-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+#sd-prompt-lab-settings-root .spl-set-title .material-symbols-rounded {
+    font-size: 20px;
+    color: var(--spl-accent);
+}
+
+#sd-prompt-lab-settings-root .spl-set-count {
+    padding: 2px 10px;
+    border: 1px solid var(--spl-border);
+    border-radius: 999px;
+    color: var(--spl-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+#sd-prompt-lab-settings-root .spl-set-hint {
+    color: var(--spl-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+/* ---- filter --------------------------------------------------------------- */
+#sd-prompt-lab-settings-root .spl-set-filter-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    background: var(--spl-panel-2);
+    color: var(--spl-muted);
+}
+
+#sd-prompt-lab-settings-root .spl-set-filter-wrap:focus-within {
+    border-color: var(--spl-accent);
+}
+
+#sd-prompt-lab-settings-root .spl-set-filter-wrap .material-symbols-rounded {
+    font-size: 18px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-filter {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--spl-text);
+    font-size: 13px;
+}
+
+/* ---- words list ----------------------------------------------------------- */
+#sd-prompt-lab-settings-root .spl-set-words-list {
+    height: 520px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    background: var(--spl-panel-2);
+}
+
+#sd-prompt-lab-settings-root .spl-set-word {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 2px 6px 2px 12px;
+    border-bottom: 1px solid var(--spl-border);
+}
+
+#sd-prompt-lab-settings-root .spl-set-word:last-child {
+    border-bottom: 0;
+}
+
+#sd-prompt-lab-settings-root .spl-set-word:hover,
+#sd-prompt-lab-settings-root .spl-set-word.is-editing {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#sd-prompt-lab-settings-root .spl-set-word-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-word-input {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--spl-accent);
+    border-radius: 6px;
+    outline: none;
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--spl-text);
+    font-size: 13px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-word.has-error .spl-set-word-input {
+    border-color: var(--spl-red);
+}
+
+#sd-prompt-lab-settings-root .spl-set-word-actions {
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+#sd-prompt-lab-settings-root .spl-set-word:hover .spl-set-word-actions,
+#sd-prompt-lab-settings-root .spl-set-word:focus-within .spl-set-word-actions,
+#sd-prompt-lab-settings-root .spl-set-word.is-editing .spl-set-word-actions {
+    opacity: 1;
+}
+
+#sd-prompt-lab-settings-root .spl-set-icon-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--spl-muted);
+    cursor: pointer;
+}
+
+#sd-prompt-lab-settings-root .spl-set-icon-btn .material-symbols-rounded {
+    font-size: 17px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-icon-btn:hover {
+    color: var(--spl-text);
+    border-color: var(--spl-border);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#sd-prompt-lab-settings-root .spl-set-icon-btn-danger:hover {
+    color: var(--spl-red);
+    border-color: var(--spl-red);
+}
+
+#sd-prompt-lab-settings-root .spl-set-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--spl-muted);
+    font-size: 13px;
+}
+
+/* ---- general rows --------------------------------------------------------- */
+#sd-prompt-lab-settings-root .spl-set-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px solid var(--spl-border);
+}
+
+#sd-prompt-lab-settings-root .spl-set-row-title {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+#sd-prompt-lab-settings-root .spl-set-row-desc {
+    margin-top: 3px;
+    color: var(--spl-muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--spl-border);
+    border-radius: 8px;
+    background: var(--spl-panel-2);
+    color: var(--spl-text);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.2;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn .material-symbols-rounded {
+    font-size: 18px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn:hover {
+    border-color: var(--spl-accent);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn-danger:hover {
+    border-color: var(--spl-red);
+    color: var(--spl-red);
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn-danger-solid {
+    border-color: var(--spl-red);
+    background: var(--spl-red);
+    color: #2a0b0b;
+    font-weight: 600;
+}
+
+#sd-prompt-lab-settings-root .spl-set-btn-danger-solid:hover {
+    border-color: var(--spl-red);
+    background: var(--spl-red);
+    filter: brightness(1.08);
+}
+
+/* switch */
+#sd-prompt-lab-settings-root .spl-set-switch {
+    flex: 0 0 auto;
+    display: inline-flex;
+    cursor: pointer;
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch-track {
+    width: 38px;
+    height: 22px;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    transition: background 0.15s;
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch-knob {
+    display: block;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch input:checked + .spl-set-switch-track {
+    background: var(--spl-accent);
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch input:checked + .spl-set-switch-track .spl-set-switch-knob {
+    transform: translateX(16px);
+}
+
+#sd-prompt-lab-settings-root .spl-set-switch input:focus-visible + .spl-set-switch-track {
+    outline: 2px solid var(--spl-accent);
+    outline-offset: 2px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-status {
+    min-height: 18px;
+    color: var(--spl-muted);
+    font-size: 12.5px;
+}
+
+#sd-prompt-lab-settings-root .spl-set-status[data-tone="ok"] {
+    color: var(--spl-green);
+}
+
+#sd-prompt-lab-settings-root .spl-set-status[data-tone="error"] {
+    color: var(--spl-red);
+}
+
+/* ---- confirm dialog ------------------------------------------------------- */
+#sd-prompt-lab-settings-root .spl-set-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#sd-prompt-lab-settings-root .spl-set-dialog {
+    width: min(420px, 92vw);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--spl-border);
+    border-radius: 12px;
+    background: var(--background-fill-primary, #1f2937);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+#sd-prompt-lab-settings-root .spl-set-dialog-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+#sd-prompt-lab-settings-root .spl-set-dialog-title .material-symbols-rounded {
+    color: var(--spl-red);
+}
+
+#sd-prompt-lab-settings-root .spl-set-dialog-msg {
+    color: var(--spl-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+#sd-prompt-lab-settings-root .spl-set-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

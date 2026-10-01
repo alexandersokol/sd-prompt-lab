@@ -6,6 +6,7 @@ import scripts.prompt_lab.sd_prompt_lab_utils as utils
 
 from scripts.prompt_lab.ui.ui_tab_browse import ui_tab_browse
 from scripts.prompt_lab.ui.ui_tab_create import ui_tab_create
+from scripts.prompt_lab.ui.ui_tab_settings import ui_tab_settings
 from scripts.prompt_lab.ui.ui_tab_tag_browser import ui_tab_tag_browser
 from scripts.prompt_lab.ui.ui_tab_tag_validator import ui_tab_tag_validator
 from scripts.prompt_lab.ui.ui_tab_wildcard_editor import ui_tab_wildcard_editor
@@ -33,5 +34,9 @@ def ui_main_block():
         with gr.Tab("Tag Validator", elem_id='sd-prompt-lab-tag-validator-tab'):
             with gr.Column():
                 ui_tab_tag_validator()
+
+        with gr.Tab("Settings", elem_id='sd-prompt-lab-settings-tab'):
+            with gr.Column():
+                ui_tab_settings()
 
     return main_block
