@@ -36,20 +36,7 @@
     }
 
     function ensureAssets() {
-        if (!document.getElementById('sd-prompt-lab-material-symbols')) {
-            const icons = document.createElement('link');
-            icons.id = 'sd-prompt-lab-material-symbols';
-            icons.rel = 'stylesheet';
-            icons.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..32,400,0,0';
-            document.head.appendChild(icons);
-        }
-        if (!document.getElementById('sd-prompt-lab-settings-style')) {
-            const style = document.createElement('link');
-            style.id = 'sd-prompt-lab-settings-style';
-            style.rel = 'stylesheet';
-            style.href = `file=extensions/sd-prompt-lab/javascript/settings.css?v=${Date.now()}`;
-            document.head.appendChild(style);
-        }
+        window.spl.loadStyle('sd-prompt-lab-settings-style', 'javascript/settings.css').catch((e) => console.error(e));
     }
 
     async function api(path, opts) {
@@ -319,13 +306,7 @@
     }
 
     function setupLazyInit() {
-        const root = gradioApp()?.querySelector('#tab_sd_prompt_lab');
-        const tabNav = root?.querySelector('.tab-nav');
-        if (!tabNav) return;
-        const btn = Array.from(tabNav.querySelectorAll('button')).find((b) =>
-            b.textContent.trim().toLowerCase().startsWith('settings'));
-        if (!btn) return;
-        btn.addEventListener('click', () => open());
+        window.spl.onTabOpened('sd-prompt-lab-settings-tab', () => open());
     }
 
     onUiLoaded(() => {

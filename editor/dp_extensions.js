@@ -8,7 +8,6 @@ import {foldService} from "@codemirror/language";
 import {linter, lintGutter} from "@codemirror/lint";
 import {extractWords, innermostBlock, parsePrompt, resolveWildcard} from "./dp_parser.js";
 
-const EXTENSION_FILES = "/file/extensions/sd-prompt-lab";
 
 // 'prompt' (whole document is one prompt) or 'wildcard-file' (one value per line).
 const modeFacet = Facet.define({combine: (values) => values[0] || "prompt"});
@@ -56,7 +55,9 @@ function refreshAllViews() {
 const lists = {common: new Set(), unwanted: new Set(), loaded: false};
 
 async function fetchLines(path) {
-    const response = await fetch(`${EXTENSION_FILES}/${path}?v=${Date.now()}`);
+    // Versioned by file mtime (see spl_common.js) so the browser can cache these files.
+    await window.spl.ready;
+    const response = await fetch(window.spl.assetUrl(path));
     if (!response.ok) throw new Error(`Failed to load ${path}`);
     return (await response.text())
         .split(/\r?\n/)

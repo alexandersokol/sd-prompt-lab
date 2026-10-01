@@ -120,7 +120,38 @@ def _build_wildcards_editor_tree(directory, base=""):
     return result
 
 
+# Static files the browser loads; their mtimes become cache-busting versions (?v=<mtime>).
+_ASSET_DIRS = ("javascript", "javascript/lib", "javascript/fonts", "editor", "editor/dict")
+_ASSET_EXTS = (".js", ".css", ".txt", ".woff2")
+_ASSET_FILES = ("common_prompts.txt", "unwanted_prompts.txt")
+
+
+def _asset_versions():
+    versions = {}
+
+    def add(rel_path):
+        try:
+            versions[rel_path] = int(os.path.getmtime(os.path.join(env.script_dir, rel_path)))
+        except OSError:
+            pass
+
+    for rel_dir in _ASSET_DIRS:
+        abs_dir = os.path.join(env.script_dir, rel_dir)
+        if not os.path.isdir(abs_dir):
+            continue
+        for name in os.listdir(abs_dir):
+            if name.endswith(_ASSET_EXTS):
+                add(f"{rel_dir}/{name}")
+    for name in _ASSET_FILES:
+        add(name)
+    return versions
+
+
 def init_api(app: FastAPI):
+    @app.get("/sd-prompt-lab/assets")
+    def get_assets():
+        return {"versions": _asset_versions()}
+
     @app.get("/sd-prompt-lab/autocomplete")
     async def autocomplete(request: Request):
         q = request.query_params.get("q", "").strip()

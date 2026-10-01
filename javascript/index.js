@@ -1,128 +1,4 @@
-function showPopupMessage(message) {
-    const outputHtml = document.getElementById('sd-prompt-lab-output-html');
-    outputHtml.innerHTML = message
-    setTimeout(() => {
-        outputHtml.innerHTML = '';
-    }, 5000);
-}
-
-window.sdPromptLabLoadCodeMirror = window.sdPromptLabLoadCodeMirror || (() => {
-    let loadPromise = null;
-
-    return () => {
-        if (window.initCodeMirror6 && window.createSdPromptLabWildcardEditor) {
-            return Promise.resolve();
-        }
-        if (loadPromise) return loadPromise;
-
-        loadPromise = new Promise((resolve, reject) => {
-            const ensureIcons = () => {
-                if (document.getElementById('sd-prompt-lab-material-symbols')) return;
-                const icons = document.createElement('link');
-                icons.id = 'sd-prompt-lab-material-symbols';
-                icons.rel = 'stylesheet';
-                icons.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..32,400,0,0';
-                document.head.appendChild(icons);
-            };
-
-            const loadScript = () => {
-                ensureIcons();
-                if (window.initCodeMirror6 && window.createSdPromptLabWildcardEditor) {
-                    resolve();
-                    return;
-                }
-
-                let script = document.getElementById('sd-prompt-lab-codemirror-bundle');
-                if (!script) {
-                    script = document.createElement('script');
-                    script.id = 'sd-prompt-lab-codemirror-bundle';
-                    script.src = `/file/extensions/sd-prompt-lab/javascript/lib/codemirror6.bundle.js?v=${Date.now()}`;
-                    script.onload = () => resolve();
-                    script.onerror = () => reject(new Error('Failed to load CodeMirror bundle'));
-                    document.head.appendChild(script);
-                } else {
-                    script.addEventListener('load', () => resolve(), {once: true});
-                    script.addEventListener('error', () => reject(new Error('Failed to load CodeMirror bundle')), {once: true});
-                }
-            };
-
-            let styles = document.getElementById('sd-prompt-lab-editor-style');
-            if (!styles) {
-                styles = document.createElement('link');
-                styles.id = 'sd-prompt-lab-editor-style';
-                styles.rel = 'stylesheet';
-                styles.href = `file=extensions/sd-prompt-lab/editor/style.css?v=${Date.now()}`;
-                styles.onload = loadScript;
-                styles.onerror = () => reject(new Error('Failed to load editor styles'));
-                document.head.appendChild(styles);
-            } else {
-                loadScript();
-            }
-        });
-
-        return loadPromise;
-    };
-})();
-
-function showInfoMessage(content) {
-    if (content) {
-        const message = `<div style="
-          background-color: rgba(74,255,2,0.4);
-          color: white;
-          height: 48px;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 4px;
-          font-size: 14px;
-        ">✅ ${content}</div>`;
-
-        showPopupMessage(message);
-    }
-}
-
-function showWarningMessage(content) {
-    if (content) {
-        const message = `<div style="
-          background-color: rgba(255,213,0,0.4);
-          color: white;
-          height: 48px;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 4px;
-          font-size: 14px;
-        ">⚠️ ${content}</div>`;
-
-        showPopupMessage(message);
-    }
-}
-
-function showErrorMessage(content) {
-    if (content) {
-        const message = `<div style="
-          background-color: rgba(202,14,15,0.4);
-          color: white;
-          height: 48px;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 4px;
-          font-size: 14px;
-        ">🆘 ${content}</div>`;
-
-        showPopupMessage(message);
-    }
-}
-
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[ch]));
-}
+const escapeHtml = (value) => window.spl.escapeHtml(value);
 
 // Prompts shown in the Browse tab, keyed by id (card buttons look their prompt up here).
 const loadedPrompts = new Map();
@@ -170,16 +46,7 @@ function fillCreateTabFields(prompt) {
 
 
 function switchToCreateTab() {
-    const root = gradioApp().querySelector('#tab_sd_prompt_lab');
-    if (!root) return;
-
-    const tabNav = root.querySelector('.tab-nav');
-    if (!tabNav) return;
-
-    const createBtn = Array.from(tabNav.querySelectorAll('button')).find(btn =>
-        btn.textContent.trim().toLowerCase().startsWith('create')
-    );
-    if (createBtn) createBtn.click();
+    window.spl.openTab('sd-prompt-lab-create-tab');
 }
 
 const loadCards = async () => {
@@ -369,13 +236,23 @@ function setupBrowseTab() {
                         btn.dataset.favorite = newFavorite ? '1' : '0';
                         btn.innerText = newFavorite ? '❤️' : '🩶';
                     })
-                    .catch(() => alert('Failed to update favorite'));
+                    .catch(() => window.spl.toast('Failed to update favorite', 'error'));
             } else if (action === 'remove') {
-                if (confirm('Are you sure you want to delete this prompt?')) {
+                window.spl.confirm({
+                    title: 'Delete this prompt?',
+                    message: `"${prompt?.name || id}" will be removed. This cannot be undone.`,
+                    confirmLabel: 'Delete',
+                    danger: true,
+                }).then((confirmed) => {
+                    if (!confirmed) return;
                     fetch(`/sd-prompt-lab/delete/${id}`, {method: 'DELETE'})
-                        .then((res) => res.ok ? loadCards() : alert('Failed to delete prompt'))
-                        .catch(() => alert('Failed to delete prompt'));
-                }
+                        .then((res) => {
+                            if (!res.ok) throw new Error('Failed to delete prompt');
+                            window.spl.toast('Prompt deleted');
+                            loadCards();
+                        })
+                        .catch((e) => window.spl.toast(e.message, 'error'));
+                });
             } else if (action === 'edit') {
                 fetch(`/sd-prompt-lab/${id}`)
                     .then((res) => res.json())
@@ -384,35 +261,24 @@ function setupBrowseTab() {
                             fillCreateTabFields(data.prompt);
                             switchToCreateTab();
                         } else {
-                            alert('Failed to load prompt data');
+                            window.spl.toast('Failed to load prompt data', 'error');
                         }
                     })
-                    .catch(() => alert('Failed to load prompt data'));
+                    .catch(() => window.spl.toast('Failed to load prompt data', 'error'));
             } else if (action === 'txt2img') {
-                if (typeof updateTxt2ImgPositivePrompt === 'function') {
-                    updateTxt2ImgPositivePrompt(promptText);
-                } else {
-                    alert('updateTxt2ImgPositivePrompt is not defined');
-                }
+                updateTxt2ImgPositivePrompt(promptText);
             } else if (action === 'copy') {
                 if (!promptText) return;
-                const textarea = document.createElement('textarea');
-                textarea.value = promptText;
-                textarea.style.position = 'fixed'; // Prevent scrolling to bottom of page in MS Edge.
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.focus();
-                textarea.select();
-                try {
-                    document.execCommand('copy');
+                window.spl.copyToClipboard(promptText).then((ok) => {
+                    if (!ok) {
+                        window.spl.toast('Failed to copy', 'error');
+                        return;
+                    }
                     btn.innerText = '✅ copied';
                     setTimeout(() => {
                         btn.innerText = '📋 copy';
                     }, 1500);
-                } catch (err) {
-                    alert('Failed to copy');
-                }
-                document.body.removeChild(textarea);
+                });
             }
         });
     }
@@ -447,7 +313,7 @@ function setupClearFieldsButton() {
 
             setOverrideChecked(false);
 
-            showInfoMessage('Fields cleared');
+            window.spl.toast('Fields cleared');
         });
     }
 }
@@ -459,9 +325,8 @@ function setupSaveButton() {
     const descriptionBlock = document.getElementById('sd-prompt-lab-description-input');
     const imagePathBlock = document.getElementById('sd-prompt-lab-image-path-input');
     const overrideBlock = document.getElementById('sd-prompt-lab-override-checkbox');
-    const outputHtml = document.getElementById('sd-prompt-lab-output-html');
 
-    if (saveButton && nameBlock && descriptionBlock && imagePathBlock && overrideBlock && outputHtml) {
+    if (saveButton && nameBlock && descriptionBlock && imagePathBlock && overrideBlock) {
         saveButton.addEventListener('click', async () => {
             const getValue = (block) => block.querySelector('textarea')?.value.trim() || '';
             const name = getValue(nameBlock);
@@ -472,12 +337,12 @@ function setupSaveButton() {
             const override = overrideBlock.querySelector('input[type="checkbox"]')?.checked || false;
 
             if (!name || !prompt) {
-                showWarningMessage('Name and Prompt are required');
+                window.spl.toast('Name and Prompt are required', 'warn');
                 return
             }
 
             if (!name.trim() || !prompt.trim()) {
-                showWarningMessage('Name and Prompt are required');
+                window.spl.toast('Name and Prompt are required', 'warn');
                 return
             }
 
@@ -491,14 +356,14 @@ function setupSaveButton() {
                 });
 
                 if (response.ok) {
-                    showInfoMessage('Saved successfully');
+                    window.spl.toast('Saved successfully');
                     loadCards();   // keep the Browse tab in sync with the saved prompt
                 } else {
                     const error = await response.json();
                     throw new Error(error.detail || "Unknown error");
                 }
             } catch (e) {
-                showErrorMessage(`Save failed: ${e.message}`)
+                window.spl.toast(`Save failed: ${e.message}`, 'error');
             }
         });
     }
@@ -518,20 +383,7 @@ function updateTxt2ImgPositivePrompt(codeContent) {
     // Dispatch input event so Gradio knows content changed
     textarea.dispatchEvent(new Event('input', {bubbles: true}));
 
-    // 4. Click txt2img tab button
-    const tabNav = document.querySelector('.tab-nav');
-    if (tabNav) {
-        const buttons = tabNav.querySelectorAll('button');
-        const txt2imgTab = Array.from(buttons).find(btn =>
-            btn.textContent.trim().toLowerCase().startsWith('txt2img')
-        );
-
-        if (txt2imgTab) {
-            txt2imgTab.click();
-        } else {
-            console.warn('txt2img tab button not found');
-        }
-    }
+    window.spl.openTxt2Img();
 }
 
 
@@ -662,19 +514,19 @@ function setupPromptCleanUpButton() {
         reformatPrompt();
         cleanUpPrompt();
         reformatPrompt();
-        showInfoMessage('Prompt cleaned up');
+        window.spl.toast('Prompt cleaned up');
     });
 }
 
 function setupPromptReformatButton() {
     onButtonClick('sd-prompt-lab-reformat-button', async () => {
         reformatPrompt()
-        showInfoMessage('Prompt reformatted');
+        window.spl.toast('Prompt reformatted');
     });
 }
 
 onUiLoaded(() => {
-    window.sdPromptLabLoadCodeMirror().then(() => {
+    window.spl.loadCodeMirror().then(() => {
         window.initCodeMirror6('#code-editor');
     }).catch((error) => {
         console.error(error);

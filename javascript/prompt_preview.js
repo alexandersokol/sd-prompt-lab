@@ -88,7 +88,7 @@
 
     window.sdPromptLabShowPreview = async (prompt) => {
         try {
-            await window.sdPromptLabLoadCodeMirror();   // also loads the popup styles
+            await window.spl.loadCodeMirror();   // also loads the popup styles
         } catch (e) {
             console.error(e);
         }

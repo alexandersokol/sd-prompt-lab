@@ -1,0 +1,198 @@
+/* Shared by every Prompt Lab tab: icon font, toasts and the confirm dialog. */
+
+/* Subset of Material Symbols Rounded (Apache 2.0) holding only the icons in use.
+   Regenerate with tools/update_icons.sh after adding an icon. */
+@font-face {
+    font-family: 'Material Symbols Rounded';
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url(fonts/material-symbols-rounded.woff2?v=3579775816) format('woff2');
+}
+
+.material-symbols-rounded {
+    font-family: 'Material Symbols Rounded';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: 'liga';
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---- toasts ---------------------------------------------------------------- */
+.spl-toasts {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 10010;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.spl-toast {
+    max-width: min(420px, calc(100vw - 40px));
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid #34465c;
+    border-left-width: 3px;
+    border-radius: 8px;
+    background: #111827;
+    color: #d8e1ec;
+    font-family: var(--font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+    font-size: 13px;
+    line-height: 1.4;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
+    cursor: pointer;
+    animation: spl-toast-in 0.18s ease-out;
+}
+
+.spl-toast.is-leaving {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.spl-toast .material-symbols-rounded {
+    flex: 0 0 auto;
+    font-size: 18px;
+}
+
+.spl-toast-text {
+    overflow-wrap: anywhere;
+}
+
+.spl-toast-ok {
+    border-left-color: #7ee787;
+}
+
+.spl-toast-ok .material-symbols-rounded {
+    color: #7ee787;
+}
+
+.spl-toast-warn {
+    border-left-color: #f2c078;
+}
+
+.spl-toast-warn .material-symbols-rounded {
+    color: #f2c078;
+}
+
+.spl-toast-error {
+    border-left-color: #ff7b72;
+}
+
+.spl-toast-error .material-symbols-rounded {
+    color: #ff7b72;
+}
+
+@keyframes spl-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spl-toast {
+        animation: none;
+    }
+}
+
+/* ---- confirm dialog -------------------------------------------------------- */
+.spl-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10020;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(4, 8, 14, 0.66);
+}
+
+.spl-confirm {
+    width: min(440px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid #34465c;
+    border-radius: 12px;
+    background: #111827;
+    color: #d8e1ec;
+    font-family: var(--font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.spl-confirm-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.spl-confirm-title .material-symbols-rounded {
+    font-size: 20px;
+    color: #f2c078;
+}
+
+.spl-confirm-message {
+    color: #8e9aae;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.spl-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.spl-confirm-btn {
+    padding: 7px 14px;
+    border: 1px solid #34465c;
+    border-radius: 8px;
+    background: #1d2a3c;
+    color: #d8e1ec;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.spl-confirm-btn:hover {
+    border-color: #63a8ff;
+}
+
+.spl-confirm-btn:focus-visible {
+    outline: 2px solid #63a8ff;
+    outline-offset: 2px;
+}
+
+.spl-confirm-btn.is-primary {
+    border-color: #2f8cff;
+    background: #2f8cff;
+    color: #fff;
+}
+
+.spl-confirm-btn.is-danger {
+    border-color: #ff7b72;
+    background: #ff7b72;
+    color: #2a0b0b;
+    font-weight: 600;
+}

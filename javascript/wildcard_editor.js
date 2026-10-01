@@ -1,59 +1,3 @@
-window.sdPromptLabLoadCodeMirror = window.sdPromptLabLoadCodeMirror || (() => {
-    let loadPromise = null;
-
-    return () => {
-        if (window.createSdPromptLabWildcardEditor) return Promise.resolve();
-        if (loadPromise) return loadPromise;
-
-        loadPromise = new Promise((resolve, reject) => {
-            const ensureIcons = () => {
-                if (document.getElementById('sd-prompt-lab-material-symbols')) return;
-                const icons = document.createElement('link');
-                icons.id = 'sd-prompt-lab-material-symbols';
-                icons.rel = 'stylesheet';
-                icons.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..32,400,0,0';
-                document.head.appendChild(icons);
-            };
-
-            const loadScript = () => {
-                ensureIcons();
-                if (window.createSdPromptLabWildcardEditor) {
-                    resolve();
-                    return;
-                }
-
-                let script = document.getElementById('sd-prompt-lab-codemirror-bundle');
-                if (!script) {
-                    script = document.createElement('script');
-                    script.id = 'sd-prompt-lab-codemirror-bundle';
-                    script.src = `/file/extensions/sd-prompt-lab/javascript/lib/codemirror6.bundle.js?v=${Date.now()}`;
-                    script.onload = () => resolve();
-                    script.onerror = () => reject(new Error('Failed to load CodeMirror bundle'));
-                    document.head.appendChild(script);
-                } else {
-                    script.addEventListener('load', () => resolve(), {once: true});
-                    script.addEventListener('error', () => reject(new Error('Failed to load CodeMirror bundle')), {once: true});
-                }
-            };
-
-            let styles = document.getElementById('sd-prompt-lab-editor-style');
-            if (!styles) {
-                styles = document.createElement('link');
-                styles.id = 'sd-prompt-lab-editor-style';
-                styles.rel = 'stylesheet';
-                styles.href = `file=extensions/sd-prompt-lab/editor/style.css?v=${Date.now()}`;
-                styles.onload = loadScript;
-                styles.onerror = () => reject(new Error('Failed to load editor styles'));
-                document.head.appendChild(styles);
-            } else {
-                loadScript();
-            }
-        });
-
-        return loadPromise;
-    };
-})();
-
 const sdPromptLabWildcardEditor = (() => {
     const state = {
         tree: [],
@@ -962,7 +906,7 @@ const sdPromptLabWildcardEditor = (() => {
         state.initialized = true;
 
         try {
-            await window.sdPromptLabLoadCodeMirror();
+            await window.spl.loadCodeMirror();
             setupEvents();
             await loadTree();
             setStatus('Ready');

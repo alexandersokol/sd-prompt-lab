@@ -19,4 +19,3 @@ def ui_tab_create():
             gr.Button('🧹 Clean Up', elem_id='sd-prompt-lab-clean-up-button')
             gr.Button('🪮 Reformat', elem_id='sd-prompt-lab-reformat-button')
 
-            gr.HTML('', elem_id='sd-prompt-lab-output-html')

@@ -301,20 +301,7 @@
     }
 
     function ensureAssets() {
-        if (!document.getElementById('sd-prompt-lab-material-symbols')) {
-            const icons = document.createElement('link');
-            icons.id = 'sd-prompt-lab-material-symbols';
-            icons.rel = 'stylesheet';
-            icons.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..32,400,0,0';
-            document.head.appendChild(icons);
-        }
-        if (!document.getElementById('sd-prompt-lab-validator-style')) {
-            const style = document.createElement('link');
-            style.id = 'sd-prompt-lab-validator-style';
-            style.rel = 'stylesheet';
-            style.href = `file=extensions/sd-prompt-lab/javascript/tag_validator.css?v=${Date.now()}`;
-            document.head.appendChild(style);
-        }
+        window.spl.loadStyle('sd-prompt-lab-validator-style', 'javascript/tag_validator.css').catch((e) => console.error(e));
     }
 
     async function api(path, opts) {
@@ -630,7 +617,7 @@
     }
 
     async function mountEditor(text) {
-        await window.sdPromptLabLoadCodeMirror();
+        await window.spl.loadCodeMirror();
         const host = $(ids.textHost);
         if (!host) return;
         if (!state.editor) {
@@ -1058,14 +1045,7 @@
 
     // Lazy-init when the Tag Validator tab is first opened.
     function setupLazyInit() {
-        const root = gradioApp()?.querySelector('#tab_sd_prompt_lab');
-        if (!root) return;
-        const tabNav = root.querySelector('.tab-nav');
-        if (!tabNav) return;
-        const btn = Array.from(tabNav.querySelectorAll('button')).find((b) =>
-            b.textContent.trim().toLowerCase().startsWith('tag validator'));
-        if (!btn) return;
-        btn.addEventListener('click', () => init());
+        window.spl.onTabOpened('sd-prompt-lab-tag-validator-tab', () => init());
     }
 
     onUiLoaded(() => {
