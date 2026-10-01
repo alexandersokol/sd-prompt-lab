@@ -31,10 +31,12 @@ test('reformat: blocks, wildcards and variables are copied verbatim', () => {
     assert.equal(reformatPrompt('[x|y] ,(a:1.2)'), '[x|y], (a:1.2)');
 });
 
-test('reformat: brackets without a partner are removed', () => {
+test('reformat: ( ) [ ] without a partner are removed, broken { } are left alone', () => {
     assert.equal(reformatPrompt('a [b c'), 'a b c');
     assert.equal(reformatPrompt('a) b'), 'a b');
-    assert.equal(reformatPrompt('a } b'), 'a b');
+    assert.equal(reformatPrompt('a } b'), 'a } b');
+    assert.equal(reformatPrompt('x ,{a|b ,c'), 'x, {a|b, c');
+    assert.equal(cleanUpPrompt('{a|b, c, c'), '{a|b, c');
     assert.equal(reformatPrompt('(a, (b)'), 'a, (b)');
     assert.equal(reformatPrompt('artist \\(style\\)'), 'artist \\(style\\)');
 });

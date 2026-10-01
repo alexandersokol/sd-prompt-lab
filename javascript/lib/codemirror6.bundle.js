@@ -26476,9 +26476,11 @@
   // through verbatim; only plain top-level text is normalised. Line breaks are kept.
 
 
+  // Stray ( ) [ ] are removed. Broken { } are left alone: they are dynamic prompts syntax,
+  // and deleting one would silently change what the prompt means. The editor flags them.
   const REMOVABLE = new Set([
-      'unmatched-brace', 'unmatched-paren', 'unmatched-bracket',
-      'unclosed-brace', 'unclosed-paren', 'unclosed-bracket',
+      'unmatched-paren', 'unmatched-bracket',
+      'unclosed-paren', 'unclosed-bracket',
   ]);
   const PROTECTED_TOKENS = new Set(['comment', 'lora', 'wildcard', 'variableSet', 'variableUse']);
 

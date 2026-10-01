@@ -80,7 +80,7 @@
 Rules for `reformatPrompt` (built on `parsePrompt(text)`):
 1. Line breaks, comments, `{}` / `${}` / `%{}` blocks, wildcards and `<…>` tags are never altered internally.
 2. In plain text at brace depth 0: collapse runs of spaces/tabs to one, normalise `,` spacing to `", "`, drop empty comma segments, trim trailing whitespace per line.
-3. Remove brackets the parser reports as `unmatched-*` or `unclosed-paren|bracket|brace`.
+3. Remove `(`, `)`, `[`, `]` the parser reports as unmatched or unclosed. Broken `{` / `}` are left untouched (decided after Phase 1).
 4. `BREAK` is kept and only recognised as a whole upper-case word.
 5. Top-level `<lora:…>` tags (not inside any block) are moved to a final line, as today.
 
