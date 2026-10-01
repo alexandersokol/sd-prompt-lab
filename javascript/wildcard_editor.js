@@ -24,6 +24,7 @@ const sdPromptLabWildcardEditor = (() => {
         path: 'sd-prompt-lab-wildcard-editor-path',
         status: 'sd-prompt-lab-wildcard-editor-status',
         save: 'sd-prompt-lab-wildcard-editor-save',
+        sample: 'sd-prompt-lab-wildcard-editor-sample',
         rename: 'sd-prompt-lab-wildcard-editor-rename',
         delete: 'sd-prompt-lab-wildcard-editor-delete',
         autosave: 'sd-prompt-lab-wildcard-editor-autosave',
@@ -356,6 +357,7 @@ const sdPromptLabWildcardEditor = (() => {
         state.selectedPath = path;
         state.selectedType = 'folder';
         renderTree();
+        saveSessionSoon();
     }
 
     function renderTree() {
@@ -419,8 +421,9 @@ const sdPromptLabWildcardEditor = (() => {
         }
     }
 
-    function toggleContentSearch() {
+    function toggleContentSearch({focus = true} = {}) {
         state.contentSearch = !state.contentSearch;
+        saveSessionSoon();
         const button = getEl(ids.searchContent);
         const input = getEl(ids.search);
         if (button) button.setAttribute('aria-pressed', String(state.contentSearch));
@@ -433,10 +436,11 @@ const sdPromptLabWildcardEditor = (() => {
             renderTree();
             setStatus('Ready');
         }
-        input?.focus();
+        if (focus) input?.focus();
     }
 
     function updateTabs() {
+        saveSessionSoon();
         const tabs = getEl(ids.tabs);
         if (!tabs) return;
         tabs.innerHTML = '';
@@ -474,7 +478,8 @@ const sdPromptLabWildcardEditor = (() => {
     function createFileState(file) {
         return window.createSdPromptLabEditorState({
             doc: file.content,
-            onChange: (doc) => onFileChanged(file, doc)
+            onChange: (doc) => onFileChanged(file, doc),
+            onSave: () => saveFile(file, false)
         });
     }
 
@@ -496,7 +501,6 @@ const sdPromptLabWildcardEditor = (() => {
         const host = getEl(ids.host);
         state.editor = window.createSdPromptLabWildcardEditor({parent: host, doc: ''});
 
-        host.addEventListener('click', handleEditorLinkClick);
         configureEditorScrollBox();
         measureEditorSoon();
     }
@@ -530,11 +534,11 @@ const sdPromptLabWildcardEditor = (() => {
         state.editor.dom.style.overflow = 'auto';
     }
 
-    async function openFile(path) {
+    async function openFile(path, {focus = true} = {}) {
         path = ensureTxtPath(path);
         const existing = state.files.get(path);
         if (existing) {
-            activateFile(path);
+            activateFile(path, {focus});
             return;
         }
 
@@ -547,11 +551,11 @@ const sdPromptLabWildcardEditor = (() => {
             modified: data.modified ?? null,
             dirty: false
         });
-        activateFile(path);
+        activateFile(path, {focus});
         setStatus(`Opened ${path}`);
     }
 
-    function activateFile(path) {
+    function activateFile(path, {focus = true} = {}) {
         ensureEditor();
         const file = state.files.get(path);
         if (!file) return;
@@ -578,8 +582,9 @@ const sdPromptLabWildcardEditor = (() => {
         updateTabs();
         updateHeader();
         validateActiveFile();
-        state.editor.focus();
+        if (focus) state.editor.focus();
         checkDiskVersion(file);
+        saveSessionSoon();
     }
 
     async function closeFile(path) {
@@ -927,24 +932,92 @@ const sdPromptLabWildcardEditor = (() => {
         if (file?.dirty) setStatus('Unsaved changes', 'warn');
     }
 
-    // Ctrl/Cmd-click on a __wildcard__ reference opens the file it points to.
-    async function handleEditorLinkClick(event) {
-        if (!state.editor || !(event.metaKey || event.ctrlKey)) return;
-        const pos = state.editor.posAtCoords({x: event.clientX, y: event.clientY});
-        if (pos == null) return;
-
-        const link = window.sdPromptLabWildcardAt(state.editor, pos);
-        if (!link) return;
-        event.preventDefault();
-        if (/[*?]/.test(link.path)) {
-            setStatus(`"${link.path}" is a pattern that can match several files`, 'warn');
+    // Open the file a __wildcard__ reference points to. Used by Ctrl/Cmd-click in every
+    // prompt editor (exposed as window.sdPromptLabOpenWildcard).
+    async function openWildcard(path) {
+        if (/[*?]/.test(path)) {
+            window.spl.toast(`"${path}" is a pattern that can match several files`, 'warn');
             return;
         }
-        const linkedPath = ensureTxtPath(link.path);
+        window.spl.openTab('sd-prompt-lab-wildcard-editor-tab');
+        await init();
+        const linkedPath = ensureTxtPath(path);
         try {
             await openFile(linkedPath);
+            // The folder holding the file may be collapsed; reveal it in the explorer.
+            const parts = linkedPath.split('/');
+            for (let i = 1; i < parts.length; i++) state.openFolders.add(parts.slice(0, i).join('/'));
+            renderTree();
+            requestAnimationFrame(() => state.editor?.requestMeasure());
         } catch (error) {
-            setStatus(`Linked wildcard not found: ${linkedPath}`, 'error');
+            window.spl.toast(`Wildcard file not found: ${linkedPath}`, 'error');
+        }
+    }
+
+    async function sampleActiveFile() {
+        const file = activeFile();
+        if (!file) {
+            setStatus('Open a wildcard file to sample it', 'warn');
+            return;
+        }
+        // Sampling reads the file from disk, so write pending edits first.
+        if (file.dirty) await saveFile(file, true);
+        const name = file.path.replace(/\.txt$/, '');
+        window.sdPromptLabShowSamples({title: `Samples from ${file.path}`, prompt: `__${name}__`});
+    }
+
+    // ---- session: open tabs, folders and toggles survive a page reload ---------------
+
+    const SESSION_KEY = 'sd-prompt-lab:wildcard-editor';
+    let sessionTimer = null;
+    let restoringSession = false;
+
+    function saveSessionSoon() {
+        if (restoringSession) return;
+        clearTimeout(sessionTimer);
+        sessionTimer = setTimeout(() => {
+            try {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({
+                    openFiles: Array.from(state.files.keys()),
+                    activePath: state.activePath,
+                    openFolders: Array.from(state.openFolders),
+                    autosave: isAutosaveEnabled(),
+                    contentSearch: state.contentSearch
+                }));
+            } catch (error) {
+                // Storage unavailable or full: the session just is not remembered.
+            }
+        }, 300);
+    }
+
+    async function restoreSession() {
+        let session = null;
+        try {
+            session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        } catch (error) {
+            session = null;
+        }
+        if (!session || typeof session !== 'object') return;
+
+        restoringSession = true;
+        try {
+            const autosave = getEl(ids.autosave);
+            if (autosave && typeof session.autosave === 'boolean') autosave.checked = session.autosave;
+            if (session.contentSearch && !state.contentSearch) toggleContentSearch({focus: false});
+            for (const folder of session.openFolders || []) state.openFolders.add(folder);
+            renderTree();
+            for (const path of session.openFiles || []) {
+                try {
+                    await openFile(path, {focus: false});
+                } catch (error) {
+                    // The file was removed since the last visit: skip it.
+                }
+            }
+            if (session.activePath && state.files.has(session.activePath)) {
+                activateFile(session.activePath, {focus: false});
+            }
+        } finally {
+            restoringSession = false;
         }
     }
 
@@ -954,6 +1027,12 @@ const sdPromptLabWildcardEditor = (() => {
         getEl(ids.newFolder)?.addEventListener('click', createFolder);
         getEl(ids.refresh)?.addEventListener('click', () => loadTree().catch(error => setStatus(error.message, 'error')));
         getEl(ids.save)?.addEventListener('click', () => saveFile(activeFile(), false));
+        getEl(ids.sample)?.addEventListener('click', () => sampleActiveFile().catch(error => setStatus(error.message, 'error')));
+        getEl(ids.autosave)?.addEventListener('change', saveSessionSoon);
+        // The editor is created while its tab may be hidden; measure once it is shown.
+        window.spl.onTabOpened('sd-prompt-lab-wildcard-editor-tab', () => {
+            requestAnimationFrame(() => state.editor?.requestMeasure());
+        });
         getEl(ids.rename)?.addEventListener('click', renameSelected);
         getEl(ids.delete)?.addEventListener('click', deleteSelected);
         getEl(ids.search)?.addEventListener('input', onSearchInput);
@@ -990,23 +1069,39 @@ const sdPromptLabWildcardEditor = (() => {
         checkbox.checked = true;
     }
 
-    async function init() {
-        if (state.initialized || !getEl(ids.root)) return;
-        state.initialized = true;
+    let initPromise = null;
 
-        try {
-            await window.spl.loadCodeMirror();
-            setupEvents();
-            await loadTree();
-            setStatus('Ready');
-        } catch (error) {
-            setStatus(error.message, 'error');
-            console.error(error);
+    function init() {
+        if (!getEl(ids.root)) return Promise.resolve();
+        if (!initPromise) {
+            state.initialized = true;
+            initPromise = (async () => {
+                try {
+                    await window.spl.loadCodeMirror();
+                    setupEvents();
+                    await loadTree();
+                    await restoreSession();
+                    setStatus('Ready');
+                } catch (error) {
+                    setStatus(error.message, 'error');
+                    console.error(error);
+                }
+            })();
         }
+        return initPromise;
     }
 
-    return {init};
+    return {init, openWildcard, available: () => !!getEl(ids.root)};
 })();
+
+// Opens a wildcard file in the Wildcard Editor from any prompt editor.
+window.sdPromptLabOpenWildcard = (path) => {
+    if (!sdPromptLabWildcardEditor.available()) {
+        window.spl.toast('The Wildcard Editor is not available (no wildcards directory)', 'warn');
+        return;
+    }
+    sdPromptLabWildcardEditor.openWildcard(path).catch((error) => console.error(error));
+};
 
 onUiLoaded(() => {
     sdPromptLabWildcardEditor.init();

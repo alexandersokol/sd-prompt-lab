@@ -13,6 +13,7 @@ def ui_tab_create():
 
             gr.Button('💾 Save', elem_id='sd-prompt-lab-save-button')
             gr.Button('🖼 txt2img', elem_id='sd-prompt-lab-txt2img-button')
+            gr.Button('🎲 Sample', elem_id='sd-prompt-lab-sample-button')
             gr.Button('🗑 Clear fields', elem_id='sd-prompt-lab-clear-button')
 
             gr.Markdown('Prompt:')

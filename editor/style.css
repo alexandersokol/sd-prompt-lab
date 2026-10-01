@@ -1045,3 +1045,268 @@
     border-color: #34465c;
     background: #1d2a3c;
 }
+
+/* ---- Create editor: fills the viewport, resizable by its bottom edge ------------- */
+.sd-prompt-lab-create-codemirror.cm-editor {
+    height: clamp(420px, calc(100vh - 260px), 1200px);
+    min-height: 200px;
+    overflow: hidden;
+    resize: vertical;
+    border-radius: 8px;
+}
+
+/* ---- status bar under an editor -------------------------------------------------- */
+.cm-editor .cm-panels-bottom {
+    border-top: 1px solid #263447;
+    background: #111827;
+    color: #8e9aae;
+}
+
+.cm-editor .spl-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 26px;
+    padding: 0 12px;
+    font-family: var(--font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cm-editor .spl-status-spacer {
+    flex: 1;
+}
+
+.cm-editor .spl-status-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.cm-editor .spl-status-item[hidden] {
+    display: none;
+}
+
+.cm-editor .spl-status .material-symbols-rounded {
+    font-size: 15px;
+}
+
+.cm-editor .spl-status-spell {
+    color: rgba(255, 213, 0, 0.75);
+}
+
+.cm-editor .spl-status-problems {
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.cm-editor .spl-status-problems span + .material-symbols-rounded {
+    margin-left: 6px;
+}
+
+.cm-editor .spl-status-problems:hover {
+    border-color: #34465c;
+    background: #1d2a3c;
+    color: #d8e1ec;
+}
+
+.cm-editor .spl-status-problems.has-errors {
+    color: #ff7b72;
+}
+
+.cm-editor .spl-status-problems.has-warnings {
+    color: #f2c078;
+}
+
+/* problems panel (Ctrl/Cmd-Shift-M) */
+.cm-editor .cm-panel.cm-panel-lint ul {
+    max-height: 160px;
+    background: #0f1723;
+    color: #d8e1ec;
+    font-size: 12.5px;
+}
+
+.cm-editor .cm-panel.cm-panel-lint ul [aria-selected] {
+    background-color: #1d2a3c;
+}
+
+.cm-editor .cm-diagnosticAction {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px solid #34465c;
+    border-radius: 5px;
+    background: #1d2a3c;
+    color: #d8e1ec;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.cm-editor .cm-diagnosticAction:hover {
+    border-color: #63a8ff;
+}
+
+/* ---- hover tooltips: wildcard preview and spelling ------------------------------- */
+.cm-editor .cm-tooltip-hover {
+    border: 1px solid #34465c;
+    border-radius: 8px;
+    background: #111827;
+    color: #d8e1ec;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.cm-editor .spl-tip {
+    max-width: 420px;
+    padding: 8px 10px;
+    font-family: var(--font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.cm-editor .spl-tip-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.cm-editor .spl-tip-lines {
+    max-height: 220px;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #b6c2d3;
+}
+
+.cm-editor .spl-tip-lines > div {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cm-editor .spl-tip-hint {
+    margin-top: 4px;
+    color: #647287;
+    font-size: 11.5px;
+}
+
+.cm-editor .spl-tip-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.cm-editor .spl-tip-btn {
+    padding: 3px 9px;
+    border: 1px solid #34465c;
+    border-radius: 6px;
+    background: #1d2a3c;
+    color: #d8e1ec;
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.cm-editor .spl-tip-btn:hover {
+    border-color: #63a8ff;
+}
+
+.cm-editor .spl-tip-btn-quiet {
+    background: transparent;
+    color: #8e9aae;
+}
+
+/* Ctrl/Cmd held: wildcard references behave like links */
+.cm-editor.spl-mod-down .spl-tok-wildcard:hover {
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* ---- completion list ------------------------------------------------------------- */
+.cm-editor .cm-tooltip-autocomplete {
+    border: 1px solid #34465c;
+    border-radius: 8px;
+    background: #111827;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}
+
+.cm-editor .cm-tooltip-autocomplete > ul > li {
+    padding: 3px 10px 3px 6px;
+    color: #d8e1ec;
+}
+
+.cm-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+    background: #24406b;
+    color: #fff;
+}
+
+.cm-editor .cm-completionDetail {
+    float: right;
+    margin-left: 16px;
+    color: #8e9aae;
+    font-style: normal;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cm-editor .cm-completionIcon {
+    width: 1.1em;
+    opacity: 1;
+}
+
+.cm-editor .cm-completionIcon::after {
+    content: "●";
+    font-size: 9px;
+    vertical-align: 1px;
+    color: #888;
+}
+
+/* tag categories use the Tag Browser colours */
+.cm-editor .cm-completionIcon-tag-0::after { color: #4a9eff; }
+.cm-editor .cm-completionIcon-tag-1::after { color: #ff6b6b; }
+.cm-editor .cm-completionIcon-tag-3::after { color: #c56bff; }
+.cm-editor .cm-completionIcon-tag-4::after { color: #4ade80; }
+.cm-editor .cm-completionIcon-tag-5::after { color: #f5b642; }
+.cm-editor .cm-completionIcon-tag-6::after { color: #f472b6; }
+.cm-editor .cm-completionIcon-saved::after { content: "★"; font-size: 11px; color: #f2c078; }
+.cm-editor .cm-completionIcon-wildcard::after { content: "_"; font-size: 12px; font-weight: 700; color: #FFA500; }
+.cm-editor .cm-completionIcon-variable::after { content: "$"; font-size: 11px; font-weight: 700; color: #4fc1ff; }
+.cm-editor .cm-completionIcon-lora::after { content: "◆"; color: lightpink; }
+
+/* ---- sample expansions popup ----------------------------------------------------- */
+.spl-samples {
+    padding: 6px 0;
+}
+
+.spl-sample {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px 8px 18px;
+    border-bottom: 1px solid #263447;
+}
+
+.spl-sample:last-child {
+    border-bottom: 0;
+}
+
+.spl-sample-num {
+    flex: 0 0 18px;
+    padding-top: 2px;
+    color: #647287;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.spl-sample-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

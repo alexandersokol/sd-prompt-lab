@@ -628,6 +628,7 @@
                 // One prompt per card; spelling is not checked here.
                 mode: 'prompt',
                 spellCheck: false,
+                statusBar: false,
                 onChange: (doc) => {
                     if (state.silentChange) return;
                     const card = activeCard();

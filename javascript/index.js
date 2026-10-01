@@ -494,9 +494,34 @@ function setupPromptReformatButton() {
     });
 }
 
+// Show a few random expansions of the prompt in the editor (needs Dynamic Prompts).
+function setupSampleButton() {
+    onButtonClick('sd-prompt-lab-sample-button', async () => {
+        const prompt = window.sdPromptLabEditor?.state.doc.toString().trim() || '';
+        if (!prompt) {
+            window.spl.toast('The prompt is empty', 'warn');
+            return;
+        }
+        window.sdPromptLabShowSamples({title: 'Sample expansions', prompt});
+    });
+}
+
+// Ctrl/Cmd-S saves from anywhere in the Create tab (the editor binds it itself).
+function setupSaveShortcut() {
+    const panel = gradioApp().getElementById('sd-prompt-lab-create-tab');
+    panel?.addEventListener('keydown', (event) => {
+        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+        if (event.target.closest?.('.cm-editor')) return;
+        event.preventDefault();
+        document.getElementById('sd-prompt-lab-save-button')?.click();
+    });
+}
+
 onUiLoaded(() => {
     window.spl.loadCodeMirror().then(() => {
-        window.initCodeMirror6('#code-editor');
+        window.initCodeMirror6('#code-editor', {
+            onSave: () => document.getElementById('sd-prompt-lab-save-button')?.click(),
+        });
     }).catch((error) => {
         console.error(error);
     });
@@ -508,4 +533,6 @@ onUiLoaded(() => {
 
     setupPromptCleanUpButton()
     setupPromptReformatButton()
+    setupSampleButton()
+    setupSaveShortcut()
 });

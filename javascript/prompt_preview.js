@@ -86,6 +86,112 @@
         });
     }
 
+    // ---- sample expansions --------------------------------------------------------
+
+    async function fetchSamples(prompt, count = 6) {
+        const res = await fetch('/sd-prompt-lab/sample', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt, count}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
+        return data.samples || [];
+    }
+
+    let samplesBackdrop = null;
+
+    function closeSamples() {
+        if (!samplesBackdrop) return;
+        samplesBackdrop.remove();
+        samplesBackdrop = null;
+        document.removeEventListener('keydown', onSamplesKeyDown, true);
+    }
+
+    function onSamplesKeyDown(event) {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeSamples();
+    }
+
+    function renderSamples(list, samples) {
+        list.innerHTML = samples.map((sample, i) => `
+            <div class="spl-sample">
+                <span class="spl-sample-num">${i + 1}</span>
+                <span class="spl-sample-text">${window.spl.escapeHtml(sample)}</span>
+                <button type="button" class="spl-preview-icon-btn" data-copy="${i}" title="Copy" aria-label="Copy">
+                    <span class="material-symbols-rounded" aria-hidden="true">content_copy</span>
+                </button>
+            </div>`).join('');
+    }
+
+    // Random expansions of `prompt` by the Dynamic Prompts library, with Re-roll.
+    window.sdPromptLabShowSamples = async ({title = 'Sample expansions', prompt}) => {
+        let samples;
+        try {
+            await window.spl.loadCodeMirror();   // popup styles live in the editor stylesheet
+            samples = await fetchSamples(prompt);
+        } catch (e) {
+            window.spl.toast(e.message, 'error');
+            return;
+        }
+
+        closeSamples();
+        samplesBackdrop = document.createElement('div');
+        samplesBackdrop.className = 'spl-preview-backdrop';
+        samplesBackdrop.innerHTML = `
+            <div class="spl-preview" role="dialog" aria-modal="true" aria-labelledby="spl-samples-title">
+                <div class="spl-preview-header">
+                    <div class="spl-preview-heading">
+                        <div id="spl-samples-title" class="spl-preview-title">${window.spl.escapeHtml(title)}</div>
+                        <div class="spl-preview-desc">Random results of the dynamic syntax. Each roll is different.</div>
+                    </div>
+                    <button type="button" class="spl-preview-icon-btn" data-action="close" title="Close" aria-label="Close">
+                        <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                    </button>
+                </div>
+                <div class="spl-preview-body spl-samples"></div>
+                <div class="spl-preview-footer">
+                    <div class="spl-preview-meta"></div>
+                    <button type="button" class="spl-preview-btn spl-preview-btn-primary" data-action="reroll">
+                        <span class="material-symbols-rounded" aria-hidden="true">casino</span>
+                        <span>Re-roll</span>
+                    </button>
+                    <button type="button" class="spl-preview-btn" data-action="close">Close</button>
+                </div>
+            </div>`;
+        const list = samplesBackdrop.querySelector('.spl-samples');
+        renderSamples(list, samples);
+
+        samplesBackdrop.addEventListener('click', async (event) => {
+            if (event.target === samplesBackdrop) {
+                closeSamples();
+                return;
+            }
+            const copy = event.target.closest('[data-copy]');
+            if (copy) {
+                const ok = await window.spl.copyToClipboard(samples[Number(copy.dataset.copy)] || '');
+                window.spl.toast(ok ? 'Copied' : 'Failed to copy', ok ? 'ok' : 'error');
+                return;
+            }
+            const action = event.target.closest('[data-action]')?.dataset.action;
+            if (action === 'close') {
+                closeSamples();
+            } else if (action === 'reroll') {
+                try {
+                    samples = await fetchSamples(prompt);
+                    if (samplesBackdrop) renderSamples(list, samples);
+                } catch (e) {
+                    window.spl.toast(e.message, 'error');
+                }
+            }
+        });
+        document.body.appendChild(samplesBackdrop);
+        document.addEventListener('keydown', onSamplesKeyDown, true);
+        samplesBackdrop.querySelector('[data-action="reroll"]').focus();
+    };
+
     window.sdPromptLabShowPreview = async (prompt) => {
         try {
             await window.spl.loadCodeMirror();   // also loads the popup styles

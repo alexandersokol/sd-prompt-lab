@@ -20,6 +20,7 @@
         filter: 'spl-set-words-filter',
         list: 'spl-set-words-list',
         spellCheck: 'spl-set-spell-check',
+        tagUnderscores: 'spl-set-tag-underscores',
         clear: 'spl-set-words-clear',
         status: 'spl-set-status',
         clearDialog: 'spl-set-clear-dialog',
@@ -218,6 +219,8 @@
         const settings = await api('/settings');
         const spell = $(ids.spellCheck);
         if (spell) spell.checked = settings.spell_check !== false;
+        const underscores = $(ids.tagUnderscores);
+        if (underscores) underscores.checked = settings.tag_underscores === true;
     }
 
     async function saveSetting(key, value) {
@@ -275,6 +278,13 @@
 
         $(ids.spellCheck)?.addEventListener('change', (e) => {
             saveSetting('spell_check', e.target.checked).catch((err) => {
+                e.target.checked = !e.target.checked;
+                setStatus(err.message, 'error');
+            });
+        });
+
+        $(ids.tagUnderscores)?.addEventListener('change', (e) => {
+            saveSetting('tag_underscores', e.target.checked).catch((err) => {
                 e.target.checked = !e.target.checked;
                 setStatus(err.message, 'error');
             });

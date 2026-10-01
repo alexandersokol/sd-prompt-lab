@@ -49,6 +49,22 @@ def ui_tab_settings():
 
                 <div class="spl-set-row">
                     <div class="spl-set-row-text">
+                        <div class="spl-set-row-title">Keep underscores in completed tags</div>
+                        <div class="spl-set-row-desc">
+                            Off: tags are inserted as <code>long hair</code> with parentheses
+                            escaped. On: exactly as in the tag dataset, <code>long_hair</code>.
+                        </div>
+                    </div>
+                    <label class="spl-set-switch">
+                        <input id="spl-set-tag-underscores" type="checkbox">
+                        <span class="spl-set-switch-track" aria-hidden="true">
+                            <span class="spl-set-switch-knob"></span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="spl-set-row">
+                    <div class="spl-set-row-text">
                         <div class="spl-set-row-title">Clean autocompletion prompts</div>
                         <div class="spl-set-row-desc">
                             Remove every saved autocompletion prompt. Saved prompts in

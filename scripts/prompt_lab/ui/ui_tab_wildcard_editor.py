@@ -43,6 +43,9 @@ def ui_tab_wildcard_editor():
                         <span>Autosave</span>
                     </label>
                     <div class="spl-ide-toolbar">
+                        <button class="spl-icon-button" id="sd-prompt-lab-wildcard-editor-sample" title="Sample values from this wildcard" aria-label="Sample values">
+                            <span class="material-symbols-rounded" aria-hidden="true">casino</span>
+                        </button>
                         <button class="spl-icon-button" id="sd-prompt-lab-wildcard-editor-save" title="Save" aria-label="Save">
                             <span class="material-symbols-rounded" aria-hidden="true">save</span>
                         </button>

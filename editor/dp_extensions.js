@@ -3,10 +3,13 @@
 // document (dp_parser.js), kept in a state field.
 
 import {EditorState, Facet, StateEffect, StateField} from "@codemirror/state";
-import {Decoration, EditorView, ViewPlugin} from "@codemirror/view";
+import {Decoration, EditorView, hoverTooltip, showPanel, ViewPlugin} from "@codemirror/view";
 import {foldService} from "@codemirror/language";
-import {linter, lintGutter} from "@codemirror/lint";
+import {closeLintPanel, linter, lintGutter, openLintPanel} from "@codemirror/lint";
 import {extractWords, innermostBlock, parsePrompt, resolveWildcard} from "./dp_parser.js";
+import {completionContext, formatCount, formatTag} from "./dp_complete.js";
+import {quickFixes} from "./dp_fixes.js";
+import {suggest} from "./dp_spell.js";
 
 
 // 'prompt' (whole document is one prompt) or 'wildcard-file' (one value per line).
@@ -83,7 +86,11 @@ export async function loadPromptLists() {
 
 const wildcardNames = {ready: false, names: new Set(), requested: false};
 
+// Hover previews of wildcard files, keyed by path; dropped whenever files change.
+const wildcardPreviews = new Map();
+
 async function loadWildcardNames() {
+    wildcardPreviews.clear();
     try {
         const response = await fetch("/sd-prompt-lab/wildcards/names");
         if (!response.ok) throw new Error(`Request failed: ${response.status}`);
@@ -105,30 +112,30 @@ function ensureWildcardNames() {
     window.addEventListener("sd-prompt-lab:wildcards-changed", loadWildcardNames);
 }
 
+// User settings (Settings tab). Loaded once, then kept current through a window event.
+const settings = {spell_check: true, tag_underscores: false, requested: false};
+
+function ensureSettings() {
+    if (settings.requested) return;
+    settings.requested = true;
+    const apply = (values) => {
+        settings.spell_check = values?.spell_check !== false;
+        settings.tag_underscores = values?.tag_underscores === true;
+        refreshAllViews();
+    };
+    fetch("/sd-prompt-lab/settings")
+        .then((response) => (response.ok ? response.json() : {}))
+        .then(apply)
+        .catch(() => {});
+    window.addEventListener("sd-prompt-lab:settings-changed", (event) => apply(event.detail));
+}
+
 const spell = {
-    enabled: true,
-    settingsRequested: false,
     dictionary: null,          // Set of known lower-case words, once loaded
     dictionaryPromise: null,
     failed: false,
     verdicts: new Map(),       // word -> true (known) | false (misspelled), from the server
 };
-
-function ensureSpellSettings() {
-    if (spell.settingsRequested) return;
-    spell.settingsRequested = true;
-    fetch("/sd-prompt-lab/settings")
-        .then((response) => (response.ok ? response.json() : {}))
-        .then((settings) => {
-            spell.enabled = settings.spell_check !== false;
-            refreshAllViews();
-        })
-        .catch(() => {});
-    window.addEventListener("sd-prompt-lab:settings-changed", (event) => {
-        spell.enabled = event.detail?.spell_check !== false;
-        refreshAllViews();
-    });
-}
 
 function ensureDictionary() {
     if (!spell.dictionaryPromise) {
@@ -232,27 +239,89 @@ const blockFolding = foldService.of((state, lineStart, lineEnd) => {
 
 // ---- linting -----------------------------------------------------------------------
 
-function lintSource(view) {
-    const state = view.state;
+// Every problem in the document: parser diagnostics plus unresolved wildcard files.
+// Shared by the linter and the status bar so both always agree.
+function collectDiagnostics(state) {
     const result = state.field(parseField);
     const length = state.doc.length;
     const diagnostics = [];
-    const push = (from, to, severity, message) => {
+    const push = (from, to, severity, message, code, extra) => {
         from = Math.min(from, length);
         to = Math.min(Math.max(to, from), length);
-        diagnostics.push({from, to, severity, message, source: "Prompt Lab"});
+        diagnostics.push({from, to, severity, message, code, ...extra});
     };
 
-    for (const d of result.diagnostics) push(d.from, d.to, d.severity, d.message);
+    for (const d of result.diagnostics) push(d.from, d.to, d.severity, d.message, d.code);
 
     if (wildcardNames.ready) {
         for (const wildcard of result.wildcards) {
             if (wildcard.dynamic || resolveWildcard(wildcard.path, wildcardNames.names)) continue;
             push(wildcard.from, wildcard.to, "warning",
-                `No wildcard file matches "${wildcard.path}"`);
+                `No wildcard file matches "${wildcard.path}"`, "wildcard-missing", {path: wildcard.path});
         }
     }
     return diagnostics;
+}
+
+async function createWildcardFile(path) {
+    const toast = (message, tone) => window.spl?.toast(message, tone);
+    try {
+        const response = await fetch(
+            `/sd-prompt-lab/wildcards/editor/file/create?path=${encodeURIComponent(path)}`, {method: "POST"});
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || `Request failed: ${response.status}`);
+        }
+        toast(`Created ${path}.txt`, "ok");
+        window.dispatchEvent(new CustomEvent("sd-prompt-lab:wildcards-changed"));
+        window.sdPromptLabOpenWildcard?.(path);
+    } catch (err) {
+        toast(`Could not create ${path}.txt: ${err.message}`, "error");
+    }
+}
+
+// Quick fixes shown in the hover tooltip and the problems panel.
+function lintActions(diagnostic) {
+    if (/[*?]/.test(diagnostic.path)) return [];
+    return [{name: "Create file", apply: () => createWildcardFile(diagnostic.path)}];
+}
+
+function fixActions(diagnostic) {
+    // Offer the fix names now; compute the actual changes against the document as it
+    // is when the user clicks (the diagnostic may have moved since).
+    const names = FIX_NAMES[diagnostic.code] || [];
+    return names.map((name) => ({
+        name,
+        apply(view, from, to) {
+            const text = view.state.doc.toString();
+            const fix = quickFixes(text, {code: diagnostic.code, from, to}).find((f) => f.name === name);
+            if (fix) view.dispatch({changes: fix.changes, userEvent: "input.fix"});
+        },
+    }));
+}
+
+const FIX_NAMES = {
+    "unmatched-brace": ['Remove "}"'],
+    "unmatched-paren": ['Remove ")"'],
+    "unmatched-bracket": ['Remove "]"'],
+    "unclosed-paren": ['Remove "("'],
+    "unclosed-bracket": ['Remove "["'],
+    "unclosed-brace": ["Close at end of line", 'Remove "{"'],
+    "pipe-outside": ["Wrap options in {}"],
+    "wildcard-underscore": ["Fix underscores"],
+    "wildcard-double-underscore": ["Fix underscores"],
+    "variable-in-variant": ["Move definition to the top"],
+};
+
+function lintSource(view) {
+    return collectDiagnostics(view.state).map((d) => ({
+        from: d.from,
+        to: d.to,
+        severity: d.severity,
+        message: d.message,
+        source: "Prompt Lab",
+        actions: d.code === "wildcard-missing" ? lintActions(d) : fixActions(d),
+    }));
 }
 
 // ---- spell check -------------------------------------------------------------------
@@ -293,7 +362,7 @@ const spellChecker = ViewPlugin.fromClass(class {
 
     async run() {
         if (this.destroyed) return;
-        if (!spell.enabled || spell.failed) {
+        if (!settings.spell_check || spell.failed) {
             if (this.decorations.size) this.apply(Decoration.none);
             return;
         }
@@ -324,6 +393,289 @@ const spellChecker = ViewPlugin.fromClass(class {
     decorations: (plugin) => plugin.decorations,
 });
 
+// ---- spelling tooltip: suggestions + add to dictionary ------------------------------
+
+function misspelledAt(view, pos) {
+    const plugin = view.plugin(spellChecker);
+    if (!plugin) return null;
+    let found = null;
+    plugin.decorations.between(pos, pos, (from, to) => {
+        found = {from, to};
+        return false;
+    });
+    return found;
+}
+
+const spellingTooltip = hoverTooltip((view, pos) => {
+    const range = misspelledAt(view, pos);
+    if (!range) return null;
+    const word = view.state.sliceDoc(range.from, range.to);
+    return {
+        pos: range.from,
+        end: range.to,
+        above: true,
+        create() {
+            const dom = document.createElement("div");
+            dom.className = "spl-tip spl-tip-spell";
+            const title = dom.appendChild(document.createElement("div"));
+            title.className = "spl-tip-title";
+            title.textContent = `"${word}" is not in the dictionary`;
+
+            const row = dom.appendChild(document.createElement("div"));
+            row.className = "spl-tip-actions";
+            for (const candidate of suggest(word, spell.dictionary)) {
+                const button = row.appendChild(document.createElement("button"));
+                button.type = "button";
+                button.className = "spl-tip-btn";
+                button.textContent = candidate;
+                button.addEventListener("click", () => {
+                    const current = misspelledAt(view, view.state.doc.length >= range.from ? range.from : 0) || range;
+                    view.dispatch({changes: {from: current.from, to: current.to, insert: candidate}, userEvent: "input.fix"});
+                    view.focus();
+                });
+            }
+            const add = row.appendChild(document.createElement("button"));
+            add.type = "button";
+            add.className = "spl-tip-btn spl-tip-btn-quiet";
+            add.textContent = "Add to dictionary";
+            add.addEventListener("click", async () => {
+                const key = word.toLowerCase();
+                try {
+                    const response = await fetch("/sd-prompt-lab/spell/words", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({word: key}),
+                    });
+                    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+                    spell.verdicts.set(key, true);
+                    refreshAllViews();
+                } catch (err) {
+                    window.spl?.toast(`Could not add "${word}": ${err.message}`, "error");
+                }
+                view.focus();
+            });
+            return {dom};
+        },
+    };
+}, {hoverTime: 250});
+
+// ---- wildcard references: hover preview and Ctrl/Cmd-click to open -------------------
+
+async function wildcardPreview(path) {
+    if (!wildcardPreviews.has(path)) {
+        wildcardPreviews.set(path, fetch(`/sd-prompt-lab/wildcards/preview?name=${encodeURIComponent(path)}`)
+            .then((response) => (response.ok ? response.json() : null))
+            .catch(() => null));
+    }
+    return wildcardPreviews.get(path);
+}
+
+const wildcardTooltip = hoverTooltip((view, pos) => {
+    // Problems on the same range already have a lint tooltip; this one adds the preview.
+    const link = wildcardAt(view, pos);
+    if (!link) return null;
+    return {
+        pos: link.from,
+        end: link.to,
+        above: true,
+        create() {
+            const dom = document.createElement("div");
+            dom.className = "spl-tip spl-tip-wildcard";
+            dom.textContent = "Loading…";
+            wildcardPreview(link.path).then((data) => {
+                dom.textContent = "";
+                if (!data || !data.files.length) {
+                    dom.textContent = `No wildcard file matches "${link.path}"`;
+                    return;
+                }
+                const title = dom.appendChild(document.createElement("div"));
+                title.className = "spl-tip-title";
+                title.textContent = data.files.length === 1
+                    ? `${data.files[0]}.txt · ${data.total} values`
+                    : `${data.files.length} files · ${data.total} values`;
+                const list = dom.appendChild(document.createElement("div"));
+                list.className = "spl-tip-lines";
+                for (const line of data.lines) {
+                    list.appendChild(document.createElement("div")).textContent = line;
+                }
+                if (data.total > data.lines.length) {
+                    const more = dom.appendChild(document.createElement("div"));
+                    more.className = "spl-tip-hint";
+                    more.textContent = `… and ${data.total - data.lines.length} more`;
+                }
+                if (data.files.length === 1 && window.sdPromptLabOpenWildcard) {
+                    const hint = dom.appendChild(document.createElement("div"));
+                    hint.className = "spl-tip-hint";
+                    hint.textContent = "Ctrl/Cmd-click to open";
+                }
+            });
+            return {dom};
+        },
+    };
+}, {hoverTime: 350});
+
+const wildcardLinks = EditorView.domEventHandlers({
+    mousedown(event, view) {
+        if (event.button !== 0 || !(event.metaKey || event.ctrlKey)) return false;
+        const pos = view.posAtCoords({x: event.clientX, y: event.clientY});
+        const link = pos == null ? null : wildcardAt(view, pos);
+        if (!link || typeof window.sdPromptLabOpenWildcard !== "function") return false;
+        event.preventDefault();
+        window.sdPromptLabOpenWildcard(link.path);
+        return true;
+    },
+    // Lets CSS show a link cursor/underline on wildcards while Ctrl/Cmd is held.
+    mousemove(event, view) {
+        view.dom.classList.toggle("spl-mod-down", event.metaKey || event.ctrlKey);
+        return false;
+    },
+});
+
+// ---- status bar --------------------------------------------------------------------
+
+function statusPanel(view) {
+    const dom = document.createElement("div");
+    dom.className = "spl-status";
+    dom.innerHTML = `
+        <span class="spl-status-item" data-part="position"></span>
+        <span class="spl-status-item" data-part="length"></span>
+        <span class="spl-status-spacer"></span>
+        <span class="spl-status-item spl-status-spell" data-part="spell" title="Misspelled words"></span>
+        <button type="button" class="spl-status-item spl-status-problems" data-part="problems"
+                title="Show problems (Ctrl/Cmd-Shift-M)"></button>`;
+    const part = (name) => dom.querySelector(`[data-part="${name}"]`);
+    const icon = (name) => `<span class="material-symbols-rounded" aria-hidden="true">${name}</span>`;
+
+    part("problems").addEventListener("click", () => {
+        if (view.dom.querySelector(".cm-panel-lint")) closeLintPanel(view);
+        else openLintPanel(view);
+    });
+
+    const render = () => {
+        const state = view.state;
+        const head = state.selection.main.head;
+        const line = state.doc.lineAt(head);
+        part("position").textContent = `Ln ${line.number}, Col ${head - line.from + 1}`;
+        part("length").textContent = `${state.doc.length.toLocaleString()} chars`;
+
+        const diagnostics = collectDiagnostics(state);
+        const errors = diagnostics.filter((d) => d.severity === "error").length;
+        const warnings = diagnostics.length - errors;
+        const problems = part("problems");
+        problems.innerHTML = `${icon("error")}<span>${errors}</span>${icon("warning")}<span>${warnings}</span>`;
+        problems.classList.toggle("has-errors", errors > 0);
+        problems.classList.toggle("has-warnings", errors === 0 && warnings > 0);
+
+        const misspelled = view.plugin(spellChecker)?.decorations.size || 0;
+        const spellPart = part("spell");
+        spellPart.hidden = misspelled === 0;
+        spellPart.innerHTML = `${icon("spellcheck")}<span>${misspelled}</span>`;
+    };
+    render();
+    return {dom, update: render};
+}
+
+// ---- completion --------------------------------------------------------------------
+
+let loraNamesPromise = null;
+
+function loraNames() {
+    if (!loraNamesPromise) {
+        loraNamesPromise = fetch("/sd-prompt-lab/loras")
+            .then((response) => (response.ok ? response.json() : {names: []}))
+            .then((data) => data.names || [])
+            .catch(() => []);
+    }
+    return loraNamesPromise;
+}
+
+// Insert `text`, adding `closer` unless it already follows the cursor.
+function applyWithCloser(text, closer, isPresent) {
+    return (view, completion, from, to) => {
+        const present = isPresent(view.state.sliceDoc(to, to + closer.length));
+        const insert = present ? text : text + closer;
+        view.dispatch({
+            changes: {from, to, insert},
+            selection: {anchor: from + insert.length + (present ? closer.length : 0)},
+            userEvent: "input.complete",
+        });
+    };
+}
+
+export async function promptCompletion(context) {
+    const line = context.state.doc.lineAt(context.pos);
+    const found = completionContext(line.text.slice(0, context.pos - line.from));
+    if (!found) return null;
+    const from = line.from + found.from;
+
+    if (found.kind === "wildcard") {
+        ensureWildcardNames();
+        return {
+            from,
+            validFor: /^[A-Za-z0-9_\/.*\- ]*$/,
+            options: [...wildcardNames.names].map((name) => ({
+                label: name,
+                type: "wildcard",
+                apply: applyWithCloser(name, "__", (after) => after === "__"),
+            })),
+        };
+    }
+
+    if (found.kind === "variable") {
+        const names = new Set(context.state.field(parseField).variables
+            .filter((v) => v.kind === "set").map((v) => v.name));
+        return {
+            from,
+            validFor: /^[A-Za-z0-9_-]*$/,
+            options: [...names].map((name) => ({
+                label: name,
+                type: "variable",
+                apply: applyWithCloser(name, "}", (after) => after === "}"),
+            })),
+        };
+    }
+
+    if (found.kind === "lora") {
+        const names = await loraNames();
+        if (context.aborted) return null;
+        return {
+            from,
+            validFor: /^[^:<>]*$/,
+            options: names.map((name) => ({
+                label: name,
+                type: "lora",
+                apply: applyWithCloser(name, ":1>", (after) => after[0] === ":" || after[0] === ">"),
+            })),
+        };
+    }
+
+    // Tags: the server filters and ranks, so the list is used as returned.
+    const controller = new AbortController();
+    context.addEventListener("abort", () => controller.abort());
+    let items = [];
+    try {
+        const response = await fetch(
+            `/sd-prompt-lab/complete?q=${encodeURIComponent(found.query)}`, {signal: controller.signal});
+        if (response.ok) items = (await response.json()).items || [];
+    } catch (err) {
+        return null;
+    }
+    if (context.aborted || !items.length) return null;
+    return {
+        from,
+        filter: false,
+        options: items.map((item, index) => {
+            const text = item.kind === "tag" ? formatTag(item.label, settings.tag_underscores) : item.label;
+            return {
+                label: text,
+                detail: item.kind === "tag" ? formatCount(item.count) : "saved",
+                type: item.kind === "tag" ? `tag-${item.category ?? "x"}` : "saved",
+                boost: -index,
+            };
+        }),
+    };
+}
+
 // ---- public ------------------------------------------------------------------------
 
 // The wildcard reference at a document position, or null. Works for every path the
@@ -341,12 +693,16 @@ export function wildcardAt(view, pos) {
 //   gutter       show the lint marker gutter
 //   activeBlock  highlight the {} block around the cursor
 //   spellCheck   underline misspelled words (also needs the Settings switch on)
+//   statusBar    cursor position, length and problem counts under the editor
+//   links        wildcard hover preview and Ctrl/Cmd-click to open the file
 export function promptLanguage({
     mode = "prompt",
     lint = true,
     gutter = true,
     activeBlock = true,
     spellCheck = false,
+    statusBar = false,
+    links = true,
 } = {}) {
     const extensions = [
         modeFacet.of(mode),
@@ -356,8 +712,17 @@ export function promptLanguage({
         highlightDecorations,
         blockFolding,
         // Only pair brackets: auto-closing quotes gets in the way of prose like "it's".
-        EditorState.languageData.of(() => [{closeBrackets: {brackets: ["(", "[", "{"]}}]),
+        // "#" comments also make Ctrl/Cmd-/ (toggle comment) work.
+        EditorState.languageData.of(() => [{
+            closeBrackets: {brackets: ["(", "[", "{"]},
+            commentTokens: {line: "#"},
+        }]),
     ];
+    ensureSettings();
+    if (links) {
+        ensureWildcardNames();
+        extensions.push(wildcardTooltip, wildcardLinks);
+    }
     if (activeBlock) extensions.push(activeBlockDecorations);
     if (lint) {
         ensureWildcardNames();
@@ -369,9 +734,7 @@ export function promptLanguage({
         }));
         if (gutter) extensions.push(lintGutter());
     }
-    if (spellCheck) {
-        ensureSpellSettings();
-        extensions.push(spellChecker);
-    }
+    if (spellCheck) extensions.push(spellChecker, spellingTooltip);
+    if (statusBar) extensions.push(showPanel.of(statusPanel));
     return extensions;
 }

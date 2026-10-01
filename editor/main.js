@@ -17,32 +17,11 @@ import {bracketMatching, foldGutter, foldKeymap} from "@codemirror/language";
 import {highlightSelectionMatches, searchKeymap} from "@codemirror/search";
 import {defaultKeymap, history, historyKeymap, indentWithTab} from "@codemirror/commands";
 import {lintKeymap} from "@codemirror/lint";
-import {loadPromptLists, promptLanguage, wildcardAt} from "./dp_extensions.js";
+import {loadPromptLists, promptCompletion, promptLanguage, wildcardAt} from "./dp_extensions.js";
 import {cleanUpPrompt, reformatPrompt} from "./dp_format.js";
 
-function promptWordsAutocomplete(context) {
-    let word = context.matchBefore(/\w+/);
-
-    if (!word) return null;
-
-    const query = word.text;
-
-    // Only trigger if query is at least 3 letters and contains only letters
-    if (query.length < 3 || !/^[a-zA-Z]+$/.test(query)) return null;
-
-    return fetch(`/sd-prompt-lab/autocomplete?q=${encodeURIComponent(query)}`)
-        .then(res => res.json())
-        .then(data => {
-            return {
-                from: word.from,
-                options: data.results.map(w => ({label: w, type: "keyword"})),
-                validFor: /^\w*$/
-            };
-        });
-}
-
 // Shared editor setup. `language` is the promptLanguage() configuration for this editor.
-function editorExtensions({language, onChange} = {}) {
+function editorExtensions({language, onChange, onSave} = {}) {
     return [
         oneDark,
         EditorView.lineWrapping,
@@ -56,7 +35,7 @@ function editorExtensions({language, onChange} = {}) {
         promptLanguage(language),
         bracketMatching(),
         closeBrackets(),
-        autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
+        autocompletion({override: [promptCompletion], activateOnTyping: true}),
         rectangularSelection(),
         crosshairCursor(),
         highlightActiveLine(),
@@ -68,6 +47,14 @@ function editorExtensions({language, onChange} = {}) {
             }
         }),
         keymap.of([
+            {
+                key: "Mod-s",
+                preventDefault: true,
+                run: () => {
+                    if (typeof onSave === "function") onSave();
+                    return true;
+                }
+            },
             indentWithTab,
             ...closeBracketsKeymap,
             ...defaultKeymap,
@@ -80,8 +67,10 @@ function editorExtensions({language, onChange} = {}) {
     ];
 }
 
-// Create tab editor.
-window.initCodeMirror6 = (selector) => {
+const CREATE_HEIGHT_KEY = "sd-prompt-lab:create-height";
+
+// Create tab editor. `onSave` runs on Ctrl/Cmd-S.
+window.initCodeMirror6 = (selector, {onSave} = {}) => {
     const textarea = document.querySelector(selector);
     if (!textarea) return;
 
@@ -92,14 +81,27 @@ window.initCodeMirror6 = (selector) => {
     const view = new EditorView({
         state: EditorState.create({
             doc: textarea.value,
-            extensions: editorExtensions({language: {mode: "prompt", spellCheck: true}})
+            extensions: editorExtensions({
+                language: {mode: "prompt", spellCheck: true, statusBar: true},
+                onSave
+            })
         }),
         parent: textarea.parentNode
     });
 
+    // Height comes from CSS (fills the viewport); dragging the resize handle sets an
+    // inline height, which is remembered.
     view.dom.classList.add("sd-prompt-lab-create-codemirror");
-    view.dom.style.height = "600px"; // 40 * 15px line height approx
-    view.dom.style.overflow = "auto"; // Optional: scroll inside view
+    try {
+        const saved = Number(localStorage.getItem(CREATE_HEIGHT_KEY));
+        if (saved >= 200) view.dom.style.height = `${saved}px`;
+        new ResizeObserver(() => {
+            if (view.dom.style.height) localStorage.setItem(CREATE_HEIGHT_KEY, String(parseInt(view.dom.style.height, 10)));
+            view.requestMeasure();
+        }).observe(view.dom);
+    } catch (err) {
+        // localStorage / ResizeObserver unavailable: the CSS default height still applies.
+    }
 
     window.sdPromptLabEditor = view;
 };
@@ -108,20 +110,23 @@ window.initCodeMirror6 = (selector) => {
 // Editor keeps one per open file and swaps them into its single view with setState().
 //   mode        'wildcard-file' (one value per line, default) | 'prompt'
 //   spellCheck  underline misspelled words (default on)
-window.createSdPromptLabEditorState = ({doc = "", onChange, mode = "wildcard-file", spellCheck = true} = {}) => {
+//   statusBar   cursor position and problem counts under the editor (default on)
+window.createSdPromptLabEditorState = ({
+    doc = "", onChange, onSave, mode = "wildcard-file", spellCheck = true, statusBar = true
+} = {}) => {
     return EditorState.create({
         doc,
-        extensions: editorExtensions({language: {mode, spellCheck}, onChange})
+        extensions: editorExtensions({language: {mode, spellCheck, statusBar}, onChange, onSave})
     });
 };
 
-window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange, mode, spellCheck} = {}) => {
+window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange, onSave, mode, spellCheck, statusBar} = {}) => {
     if (!parent) return null;
 
     loadPromptLists();
 
     const view = new EditorView({
-        state: window.createSdPromptLabEditorState({doc, onChange, mode, spellCheck}),
+        state: window.createSdPromptLabEditorState({doc, onChange, onSave, mode, spellCheck, statusBar}),
         parent
     });
 
@@ -144,7 +149,7 @@ window.createSdPromptLabReadOnlyView = ({parent, doc = ""} = {}) => {
                 EditorState.readOnly.of(true),
                 EditorView.editable.of(false),
                 highlightSpecialChars(),
-                promptLanguage({mode: "prompt", gutter: false, activeBlock: false, spellCheck: false})
+                promptLanguage({mode: "prompt", gutter: false, activeBlock: false, spellCheck: false, links: false})
             ]
         }),
         parent

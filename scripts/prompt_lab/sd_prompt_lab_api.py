@@ -1,5 +1,6 @@
 import mimetypes
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -543,7 +544,12 @@ def init_api(app: FastAPI):
             return {"items": []}
         limit = max(1, min(limit, 50))
         items, seen = [], set()
-        for word in db.search_prompt_words(q, limit=8):
+        # Saved words match where one of their words starts with the query ("lo" finds
+        # "long coat" and "very long", not "solo"); whole-prefix matches come first.
+        starts = re.compile(r"(^|[\s_\-(])" + re.escape(q), re.IGNORECASE)
+        saved = [w for w in db.search_prompt_words(q, limit=60) if starts.search(w)]
+        saved.sort(key=lambda w: (not w.lower().startswith(q.lower()), w.lower()))
+        for word in saved[:8]:
             seen.add(word.lower().replace(" ", "_"))
             items.append({"label": word, "kind": "saved", "count": None, "category": None})
         for tag in tags_db.complete_tags(q, limit=limit):
