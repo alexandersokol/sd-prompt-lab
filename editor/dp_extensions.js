@@ -326,6 +326,15 @@ const spellChecker = ViewPlugin.fromClass(class {
 
 // ---- public ------------------------------------------------------------------------
 
+// The wildcard reference at a document position, or null. Works for every path the
+// parser accepts (the old regex missed paths containing "_").
+export function wildcardAt(view, pos) {
+    const result = view.state.field(parseField, false);
+    if (!result) return null;
+    const hit = result.wildcards.find((w) => pos >= w.from && pos <= w.to);
+    return hit && !hit.dynamic ? {path: hit.path, from: hit.from, to: hit.to} : null;
+}
+
 // Language support for a prompt editor.
 //   mode         'prompt' | 'wildcard-file'
 //   lint         show error/warning underlines (and hover messages)

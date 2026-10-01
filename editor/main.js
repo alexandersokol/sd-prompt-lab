@@ -17,7 +17,8 @@ import {bracketMatching, foldGutter, foldKeymap} from "@codemirror/language";
 import {highlightSelectionMatches, searchKeymap} from "@codemirror/search";
 import {defaultKeymap, history, historyKeymap, indentWithTab} from "@codemirror/commands";
 import {lintKeymap} from "@codemirror/lint";
-import {loadPromptLists, promptLanguage} from "./dp_extensions.js";
+import {loadPromptLists, promptLanguage, wildcardAt} from "./dp_extensions.js";
+import {cleanUpPrompt, reformatPrompt} from "./dp_format.js";
 
 function promptWordsAutocomplete(context) {
     let word = context.matchBefore(/\w+/);
@@ -159,6 +160,12 @@ window.setSdPromptLabEditorDocument = (view, doc = "") => {
         changes: {from: 0, to: view.state.doc.length, insert: doc}
     });
 };
+
+// Syntax-aware tidying used by the Create tab's Reformat / Clean Up buttons.
+window.sdPromptLabFormat = {reformat: reformatPrompt, cleanUp: cleanUpPrompt};
+
+// {path, from, to} of the wildcard reference at a document position, or null.
+window.sdPromptLabWildcardAt = wildcardAt;
 
 // npm install
 // npm run build

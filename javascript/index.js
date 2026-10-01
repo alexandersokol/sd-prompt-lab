@@ -11,6 +11,41 @@ function setOverrideChecked(checked) {
     checkbox.dispatchEvent(new Event('change', {bubbles: true}));
 }
 
+// ---- unsaved-changes tracking for the Create tab ----------------------------------
+
+function readCreateFields() {
+    const value = (id) => gradioApp().getElementById(id)?.querySelector('textarea')?.value || '';
+    return {
+        name: value('sd-prompt-lab-name-input'),
+        description: value('sd-prompt-lab-description-input'),
+        image: value('sd-prompt-lab-image-path-input'),
+        prompt: window.sdPromptLabEditor?.state.doc.toString() || '',
+    };
+}
+
+// What the Create tab looked like when it was last loaded, saved or cleared.
+let createBaseline = {name: '', description: '', image: '', prompt: ''};
+
+function markCreateClean() {
+    createBaseline = readCreateFields();
+}
+
+function isCreateDirty() {
+    const current = readCreateFields();
+    return Object.keys(createBaseline).some((key) => current[key] !== createBaseline[key]);
+}
+
+// Resolves true when it is fine to replace the Create tab's content.
+function confirmDiscardCreateChanges() {
+    if (!isCreateDirty()) return Promise.resolve(true);
+    return window.spl.confirm({
+        title: 'Discard unsaved changes?',
+        message: 'The Create tab has changes that are not saved. They will be lost.',
+        confirmLabel: 'Discard',
+        danger: true,
+    });
+}
+
 function getSearchInputText() {
     const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
     return searchInput.querySelector('textarea')?.value || '';
@@ -42,6 +77,7 @@ function fillCreateTabFields(prompt) {
 
     // A freshly opened prompt never starts with "Override existing" ticked.
     setOverrideChecked(false);
+    markCreateClean();
 }
 
 
@@ -254,17 +290,20 @@ function setupBrowseTab() {
                         .catch((e) => window.spl.toast(e.message, 'error'));
                 });
             } else if (action === 'edit') {
-                fetch(`/sd-prompt-lab/${id}`)
-                    .then((res) => res.json())
-                    .then((data) => {
-                        if (data.status === 'ok') {
-                            fillCreateTabFields(data.prompt);
-                            switchToCreateTab();
-                        } else {
-                            window.spl.toast('Failed to load prompt data', 'error');
-                        }
-                    })
-                    .catch(() => window.spl.toast('Failed to load prompt data', 'error'));
+                confirmDiscardCreateChanges().then((proceed) => {
+                    if (!proceed) return;
+                    fetch(`/sd-prompt-lab/${id}`)
+                        .then((res) => res.json())
+                        .then((data) => {
+                            if (data.status === 'ok') {
+                                fillCreateTabFields(data.prompt);
+                                switchToCreateTab();
+                            } else {
+                                window.spl.toast('Failed to load prompt data', 'error');
+                            }
+                        })
+                        .catch(() => window.spl.toast('Failed to load prompt data', 'error'));
+                });
             } else if (action === 'txt2img') {
                 updateTxt2ImgPositivePrompt(promptText);
             } else if (action === 'copy') {
@@ -293,6 +332,8 @@ function setupClearFieldsButton() {
 
     if (clearFieldsButton && nameBlock && descriptionBlock && imagePathBlock && overrideBlock) {
         clearFieldsButton.addEventListener('click', async () => {
+            if (!await confirmDiscardCreateChanges()) return;
+
             const setValue = (block) => {
                 const textarea = block.querySelector('textarea');
                 if (textarea) {
@@ -312,6 +353,7 @@ function setupClearFieldsButton() {
             }
 
             setOverrideChecked(false);
+            markCreateClean();
 
             window.spl.toast('Fields cleared');
         });
@@ -357,6 +399,7 @@ function setupSaveButton() {
 
                 if (response.ok) {
                     window.spl.toast('Saved successfully');
+                    markCreateClean();
                     loadCards();   // keep the Browse tab in sync with the saved prompt
                 } else {
                     const error = await response.json();
@@ -405,99 +448,21 @@ function setupTxt2ImgButton() {
     }
 }
 
-function cleanUpPrompt() {
-    let prompt = window.sdPromptLabEditor?.state.doc.toString().trim() || '';
+// Reformat / Clean Up are syntax-aware (editor/dp_format.js): they never touch comments,
+// {} blocks, wildcards or line breaks. Applied as one change, so a single undo reverts it.
+function applyPromptFormat(kind, doneMessage) {
+    const editor = window.sdPromptLabEditor;
+    const format = window.sdPromptLabFormat;
+    if (!editor || !format) return;
 
-    const seen = new Set();
-
-    const parts = prompt
-        .split(',')
-        .map(p => p.trim())
-        .filter(p => {
-            const key = p.toLowerCase(); // use lowercase for comparison
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-
-    prompt = parts.join(', ');
-
-    if (window.sdPromptLabEditor) {
-        window.sdPromptLabEditor.dispatch({
-            changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: prompt}
-        });
+    const current = editor.state.doc.toString();
+    const next = format[kind](current);
+    if (next === current) {
+        window.spl.toast('Nothing to change');
+        return;
     }
-}
-
-function removeUnmatchedBrackets(str) {
-    const pairs = {'(': ')', '{': '}', '<': '>'};
-    const open = Object.keys(pairs);
-    const close = Object.values(pairs);
-    const stack = [];
-
-    const keep = new Array(str.length).fill(true);
-
-    for (let i = 0; i < str.length; i++) {
-        const char = str[i];
-
-        if (open.includes(char)) {
-            stack.push({char, index: i});
-        } else if (close.includes(char)) {
-            const matchIndex = stack.findLastIndex(item => pairs[item.char] === char);
-            if (matchIndex !== -1) {
-                stack.splice(matchIndex, 1); // valid pair, leave them
-            } else {
-                keep[i] = false; // unmatched closing
-            }
-        }
-    }
-
-    // remove leftover unmatched openings
-    for (const item of stack) {
-        keep[item.index] = false;
-    }
-
-    return [...str].filter((_, i) => keep[i]).join('');
-}
-
-
-function reformatPrompt() {
-    let prompt = window.sdPromptLabEditor?.state.doc.toString().trim() || '';
-    prompt = prompt.replace(/BREAK/gi, '')  // remove all "BREAK"
-        .replace(/\s+/g, ' ')      // collapse all whitespace
-        .replace(/\s+,/g, ', ')    // remove space before comma, add one after
-        .replace(/,(?!\s)/g, ', ') // ensure space after comma
-        .split(',')                              // split by comma
-        .map(item => item.trim())                  // trim each part
-        .filter(item => item.length > 0)           // remove empty entries
-        .join(', ')                                       // join with clean commas
-        .trim();                                          // final trim
-
-    // Step 2: Extract LoRA tags
-    const loraRegex = /<lora:[^>]+?>/gi;
-    const loraMatches = [...prompt.matchAll(loraRegex)].map(m => m[0]);
-
-    // Step 3: Remove LoRA tags from main prompt
-    let cleanedPrompt = prompt.replace(loraRegex, '').replace(/\s+/g, ' ').trim();
-    cleanedPrompt = removeUnmatchedBrackets(cleanedPrompt);
-
-    // Step 4: Split, clean and filter empty entries
-    const promptParts = cleanedPrompt
-        .split(',')
-        .map(p => p.trim())
-        .filter(p => p.length > 0);
-
-    // Step 5: Join main prompt and LoRAs
-    const finalPrompt = promptParts.join(', ') + (loraMatches.length > 0 ? ',' : '');
-    const loraLine = loraMatches.join(', ');
-
-    const clearedPrompt = loraMatches.length > 0 ? `${finalPrompt}\n${loraLine}` : finalPrompt;
-
-    if (window.sdPromptLabEditor) {
-        window.sdPromptLabEditor.dispatch({
-            changes: {from: 0, to: window.sdPromptLabEditor.state.doc.length, insert: clearedPrompt}
-        });
-    }
+    editor.dispatch({changes: {from: 0, to: current.length, insert: next}});
+    window.spl.toast(doneMessage);
 }
 
 function onButtonClick(buttonId, onClick) {
@@ -511,17 +476,13 @@ function onButtonClick(buttonId, onClick) {
 
 function setupPromptCleanUpButton() {
     onButtonClick('sd-prompt-lab-clean-up-button', async () => {
-        reformatPrompt();
-        cleanUpPrompt();
-        reformatPrompt();
-        window.spl.toast('Prompt cleaned up');
+        applyPromptFormat('cleanUp', 'Prompt cleaned up');
     });
 }
 
 function setupPromptReformatButton() {
     onButtonClick('sd-prompt-lab-reformat-button', async () => {
-        reformatPrompt()
-        window.spl.toast('Prompt reformatted');
+        applyPromptFormat('reformat', 'Prompt reformatted');
     });
 }
 
