@@ -1046,9 +1046,10 @@
     background: #1d2a3c;
 }
 
-/* ---- Create editor: fills the viewport, resizable by its bottom edge ------------- */
+/* ---- Create editor: fills the window down to its bottom edge (height measured in
+   editor/main.js), resizable by its bottom-right corner ----------------------------- */
 .sd-prompt-lab-create-codemirror.cm-editor {
-    height: clamp(420px, calc(100vh - 260px), 1200px);
+    height: var(--spl-create-fill, clamp(420px, calc(100vh - 260px), 1200px));
     min-height: 200px;
     overflow: hidden;
     resize: vertical;

@@ -27201,6 +27201,8 @@
   }
 
   const CREATE_HEIGHT_KEY = "sd-prompt-lab:create-height";
+  const CREATE_MIN_HEIGHT = 360;
+  const CREATE_BOTTOM_GAP = 24;   // breathing room between the editor and the window edge
 
   // Create tab editor. `onSave` runs on Ctrl/Cmd-S.
   window.initCodeMirror6 = (selector, {onSave} = {}) => {
@@ -27222,9 +27224,18 @@
           parent: textarea.parentNode
       });
 
-      // Height comes from CSS (fills the viewport); dragging the resize handle sets an
-      // inline height, which is remembered.
+      // The editor fills the space from its top edge down to the bottom of the window.
+      // Dragging the resize handle sets an inline height instead, which is remembered;
+      // double-clicking the handle corner goes back to filling.
       view.dom.classList.add("sd-prompt-lab-create-codemirror");
+      const fitHeight = () => {
+          const rect = view.dom.getBoundingClientRect();
+          if (!rect.width) return;    // tab is hidden; measured again once it is shown
+          const top = rect.top + window.scrollY;
+          const height = Math.max(CREATE_MIN_HEIGHT, Math.floor(window.innerHeight - top - CREATE_BOTTOM_GAP));
+          view.dom.style.setProperty("--spl-create-fill", `${height}px`);
+          view.requestMeasure();
+      };
       try {
           const saved = Number(localStorage.getItem(CREATE_HEIGHT_KEY));
           if (saved >= 200) view.dom.style.height = `${saved}px`;
@@ -27232,9 +27243,20 @@
               if (view.dom.style.height) localStorage.setItem(CREATE_HEIGHT_KEY, String(parseInt(view.dom.style.height, 10)));
               view.requestMeasure();
           }).observe(view.dom);
+          // Fires when the tab holding the editor becomes visible.
+          new IntersectionObserver(fitHeight).observe(view.dom);
+          view.dom.addEventListener("dblclick", (event) => {
+              const rect = view.dom.getBoundingClientRect();
+              if (rect.right - event.clientX > 18 || rect.bottom - event.clientY > 18) return;
+              view.dom.style.removeProperty("height");
+              localStorage.removeItem(CREATE_HEIGHT_KEY);
+              fitHeight();
+          });
       } catch (err) {
-          // localStorage / ResizeObserver unavailable: the CSS default height still applies.
+          // localStorage / observers unavailable: the CSS fallback height still applies.
       }
+      window.addEventListener("resize", fitHeight);
+      fitHeight();
 
       window.sdPromptLabEditor = view;
   };
