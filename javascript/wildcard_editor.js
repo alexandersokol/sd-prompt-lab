@@ -63,6 +63,10 @@ const sdPromptLabWildcardEditor = (() => {
         selectedType: null,
         editor: null,
         openFolders: new Set(),
+        contentSearch: false,
+        contentMatches: null,
+        contentSearchSeq: 0,
+        contentSearchTimer: null,
         initialized: false
     };
 
@@ -70,6 +74,7 @@ const sdPromptLabWildcardEditor = (() => {
         root: 'sd-prompt-lab-wildcard-editor-root',
         tree: 'sd-prompt-lab-wildcard-editor-tree',
         search: 'sd-prompt-lab-wildcard-editor-search',
+        searchContent: 'sd-prompt-lab-wildcard-editor-search-content',
         host: 'sd-prompt-lab-wildcard-editor-host',
         tabs: 'sd-prompt-lab-wildcard-editor-tabs',
         path: 'sd-prompt-lab-wildcard-editor-path',
@@ -273,12 +278,27 @@ const sdPromptLabWildcardEditor = (() => {
         return children;
     }
 
-    function createTreeNode(item, search, depth = 0) {
-        if (search && item.type === 'folder') {
+    // Current explorer filter, or null when the search field is empty.
+    // Name mode matches file/folder names; content mode matches the server's hit list.
+    function treeFilter() {
+        const search = (getEl(ids.search)?.value || '').trim().toLowerCase();
+        if (!search) return null;
+        if (state.contentSearch) {
+            const matches = state.contentMatches || new Set();
+            return {file: (item) => matches.has(item.path), folder: () => false};
+        }
+        return {
+            file: (item) => item.name.toLowerCase().includes(search) || item.path.toLowerCase().includes(search),
+            folder: (item) => item.name.toLowerCase().includes(search)
+        };
+    }
+
+    function createTreeNode(item, filter, depth = 0) {
+        if (filter && item.type === 'folder') {
             const childMatches = (item.children || [])
-                .map(child => createTreeNode(child, search, depth + 1))
+                .map(child => createTreeNode(child, filter, depth + 1))
                 .filter(Boolean);
-            if (!childMatches.length && !item.name.toLowerCase().includes(search)) return null;
+            if (!childMatches.length && !filter.folder(item)) return null;
 
             const folder = document.createElement('div');
             folder.className = 'spl-tree-folder is-open';
@@ -302,7 +322,7 @@ const sdPromptLabWildcardEditor = (() => {
             const children = createTreeChildren();
             if (isOpen) {
                 (item.children || []).forEach(child => {
-                    const node = createTreeNode(child, search, depth + 1);
+                    const node = createTreeNode(child, filter, depth + 1);
                     if (node) children.appendChild(node);
                 });
             }
@@ -310,9 +330,7 @@ const sdPromptLabWildcardEditor = (() => {
             return folder;
         }
 
-        if (search && !item.name.toLowerCase().includes(search) && !item.path.toLowerCase().includes(search)) {
-            return null;
-        }
+        if (filter && !filter.file(item)) return null;
 
         const row = document.createElement('div');
         row.className = 'spl-tree-row spl-tree-file';
@@ -398,7 +416,7 @@ const sdPromptLabWildcardEditor = (() => {
         const container = getEl(ids.tree);
         if (!container) return;
 
-        const search = (getEl(ids.search)?.value || '').trim().toLowerCase();
+        const filter = treeFilter();
         container.innerHTML = '';
 
         if (!state.tree.length) {
@@ -412,10 +430,64 @@ const sdPromptLabWildcardEditor = (() => {
         const list = document.createElement('div');
         list.className = 'spl-tree-list';
         state.tree.forEach(item => {
-            const node = createTreeNode(item, search, 0);
+            const node = createTreeNode(item, filter, 0);
             if (node) list.appendChild(node);
         });
+        if (filter && !list.childElementCount) {
+            const empty = document.createElement('div');
+            empty.className = 'spl-tree-empty';
+            empty.textContent = 'No matching files';
+            container.appendChild(empty);
+            return;
+        }
         container.appendChild(list);
+    }
+
+    function onSearchInput() {
+        if (!state.contentSearch) {
+            renderTree();
+            return;
+        }
+        clearTimeout(state.contentSearchTimer);
+        state.contentSearchTimer = setTimeout(runContentSearch, 250);
+    }
+
+    async function runContentSearch() {
+        const query = (getEl(ids.search)?.value || '').trim();
+        const seq = ++state.contentSearchSeq;
+        if (!query) {
+            state.contentMatches = null;
+            renderTree();
+            setStatus('Ready');
+            return;
+        }
+        try {
+            const data = await requestJson(`/sd-prompt-lab/wildcards/editor/search?q=${encodeURIComponent(query)}`);
+            if (seq !== state.contentSearchSeq) return;   // a newer search superseded this one
+            state.contentMatches = new Set((data.paths || []).map(normalizePath));
+            renderTree();
+            const count = state.contentMatches.size;
+            setStatus(`${count} file${count === 1 ? '' : 's'} contain "${query}"`, count ? 'ok' : 'warn');
+        } catch (error) {
+            if (seq === state.contentSearchSeq) setStatus(error.message, 'error');
+        }
+    }
+
+    function toggleContentSearch() {
+        state.contentSearch = !state.contentSearch;
+        const button = getEl(ids.searchContent);
+        const input = getEl(ids.search);
+        if (button) button.setAttribute('aria-pressed', String(state.contentSearch));
+        if (input) input.placeholder = state.contentSearch ? 'Search in file contents' : 'Search files';
+        clearTimeout(state.contentSearchTimer);
+        state.contentSearchSeq++;
+        state.contentMatches = null;
+        if (state.contentSearch) runContentSearch();
+        else {
+            renderTree();
+            setStatus('Ready');
+        }
+        input?.focus();
     }
 
     function updateTabs() {
@@ -853,7 +925,11 @@ const sdPromptLabWildcardEditor = (() => {
         getEl(ids.save)?.addEventListener('click', () => saveFile(activeFile(), false));
         getEl(ids.rename)?.addEventListener('click', renameSelected);
         getEl(ids.delete)?.addEventListener('click', deleteSelected);
-        getEl(ids.search)?.addEventListener('input', renderTree);
+        getEl(ids.search)?.addEventListener('input', onSearchInput);
+        getEl(ids.searchContent)?.addEventListener('click', (event) => {
+            event.preventDefault();
+            toggleContentSearch();
+        });
         getEl(ids.path)?.addEventListener('click', async () => {
             const pathEl = getEl(ids.path);
             const value = pathEl?.dataset.copyValue;

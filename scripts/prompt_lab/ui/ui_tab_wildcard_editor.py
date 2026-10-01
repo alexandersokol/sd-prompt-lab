@@ -25,6 +25,10 @@ def ui_tab_wildcard_editor():
                 <label class="spl-ide-search-wrap">
                     <span class="material-symbols-rounded" aria-hidden="true">search</span>
                     <input id="sd-prompt-lab-wildcard-editor-search" class="spl-ide-search" placeholder="Search files">
+                    <button type="button" id="sd-prompt-lab-wildcard-editor-search-content" class="spl-search-toggle"
+                            aria-pressed="false" title="Search in file contents" aria-label="Search in file contents">
+                        <span class="material-symbols-rounded" aria-hidden="true">find_in_page</span>
+                    </button>
                 </label>
                 <div id="sd-prompt-lab-wildcard-editor-tree" class="spl-ide-tree"></div>
             </aside>

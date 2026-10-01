@@ -281,6 +281,33 @@
     color: var(--spl-subtle);
 }
 
+/* "Search in file contents" toggle inside the explorer search field. */
+.spl-search-toggle {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    margin-right: -5px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--spl-subtle);
+    cursor: pointer;
+}
+
+.spl-search-toggle:hover {
+    color: var(--spl-text);
+    background: var(--spl-panel-3);
+}
+
+.spl-search-toggle[aria-pressed="true"] {
+    color: var(--spl-accent);
+    background: var(--spl-accent-soft);
+    border-color: var(--spl-accent);
+}
+
 .spl-ide-tree {
     min-height: 0;
     overflow-x: hidden;
