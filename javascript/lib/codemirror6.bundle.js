@@ -27153,6 +27153,35 @@
       return assemble(unmask(normalise(lines.join('\n')), parts), uniqueLoras);
   }
 
+  // Static HTML highlighting of a prompt (Browse cards), using the same token classes as
+  // the editor. Pure module.
+
+
+  const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+  const escapeHtml = (value) => value.replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+
+  // Returns HTML for `text` with <span class="spl-tok-…"> around syntax. Text beyond
+  // `limit` characters is dropped (cards only show an excerpt).
+  function highlightHtml(input, {mode = "prompt", limit = 4000} = {}) {
+      const text = String(input ?? "").slice(0, limit);
+      const classes = new Array(text.length).fill("");
+      // Tokens are sorted by start, so a token nested in another overrides its parent.
+      for (const token of parsePrompt(text, {mode}).tokens) {
+          const cls = token.depth ? `spl-tok-${token.type} spl-depth-${token.depth}` : `spl-tok-${token.type}`;
+          classes.fill(cls, token.from, Math.min(token.to, text.length));
+      }
+
+      let html = "";
+      for (let i = 0; i < text.length;) {
+          let j = i + 1;
+          while (j < text.length && classes[j] === classes[i]) j++;
+          const chunk = escapeHtml(text.slice(i, j));
+          html += classes[i] ? `<span class="${classes[i]}">${chunk}</span>` : chunk;
+          i = j;
+      }
+      return html;
+  }
+
   // Shared editor setup. `language` is the promptLanguage() configuration for this editor.
   function editorExtensions({language, onChange, onSave} = {}) {
       return [
@@ -27323,6 +27352,9 @@
 
   // Syntax-aware tidying used by the Create tab's Reformat / Clean Up buttons.
   window.sdPromptLabFormat = {reformat: reformatPrompt, cleanUp: cleanUpPrompt};
+
+  // HTML with the editor's token classes, for static excerpts (Browse cards).
+  window.sdPromptLabHighlightHtml = highlightHtml;
 
   // {path, from, to} of the wildcard reference at a document position, or null.
   window.sdPromptLabWildcardAt = wildcardAt;

@@ -21,6 +21,9 @@
         list: 'spl-set-words-list',
         spellCheck: 'spl-set-spell-check',
         tagUnderscores: 'spl-set-tag-underscores',
+        importButton: 'spl-set-import',
+        importFile: 'spl-set-import-file',
+        importConflict: 'spl-set-import-conflict',
         clear: 'spl-set-words-clear',
         status: 'spl-set-status',
         clearDialog: 'spl-set-clear-dialog',
@@ -230,6 +233,23 @@
         setStatus('Settings saved', 'ok');
     }
 
+    // ---- import ------------------------------------------------------------
+
+    async function importFile(file) {
+        let data;
+        try {
+            data = JSON.parse(await file.text());
+        } catch (e) {
+            throw new Error('That file is not valid JSON');
+        }
+        const on_conflict = $(ids.importConflict)?.value || 'skip';
+        const result = await api('/import', jsonBody('POST', {data, on_conflict}));
+        window.spl.toast(
+            `Imported: ${result.created} new, ${result.updated} replaced, ${result.skipped} skipped`);
+        window.sdPromptLabReloadBrowse?.();
+        await loadPage(true);   // imported prompts add autocompletion words
+    }
+
     // ---- wiring ----------------------------------------------------------
 
     let filterTimer = null;
@@ -288,6 +308,14 @@
                 e.target.checked = !e.target.checked;
                 setStatus(err.message, 'error');
             });
+        });
+
+        $(ids.importButton)?.addEventListener('click', () => $(ids.importFile)?.click());
+        $(ids.importFile)?.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';   // allow picking the same file again
+            if (!file) return;
+            importFile(file).catch((err) => window.spl.toast(`Import failed: ${err.message}`, 'error'));
         });
 
         $(ids.clear)?.addEventListener('click', () => { $(ids.clearDialog).hidden = false; });

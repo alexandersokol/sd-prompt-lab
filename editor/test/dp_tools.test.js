@@ -91,3 +91,16 @@ test('every applied fix removes the diagnostic it was offered for', () => {
         assert.ok(!parsePrompt(fixed).diagnostics.some((d) => d.code === before.code), `${text} -> ${fixed}`);
     }
 });
+
+test('highlightHtml', async () => {
+    const {highlightHtml} = await import('../dp_highlight.js');
+    assert.equal(highlightHtml('a, b'), 'a, b');
+    assert.equal(highlightHtml('{a|b}'),
+        '<span class="spl-tok-brace spl-depth-1">{</span>a<span class="spl-tok-pipe spl-depth-1">|</span>b<span class="spl-tok-brace spl-depth-1">}</span>');
+    assert.equal(highlightHtml('<lora:x:1> & "q"'), '<span class="spl-tok-lora">&lt;lora:x:1&gt;</span> &amp; &quot;q&quot;');
+    assert.equal(highlightHtml('__a(b=1)__'),
+        '<span class="spl-tok-wildcard">__a</span><span class="spl-tok-wildcardParams">(b=1)</span><span class="spl-tok-wildcard">__</span>');
+    assert.equal(highlightHtml('abcdef', {limit: 3}), 'abc');
+    assert.equal(highlightHtml(null), '');
+    assert.ok(!highlightHtml('<script>alert(1)</script>').includes('<script'));
+});

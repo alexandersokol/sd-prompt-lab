@@ -19,6 +19,7 @@ import {defaultKeymap, history, historyKeymap, indentWithTab} from "@codemirror/
 import {lintKeymap} from "@codemirror/lint";
 import {loadPromptLists, promptCompletion, promptLanguage, wildcardAt} from "./dp_extensions.js";
 import {cleanUpPrompt, reformatPrompt} from "./dp_format.js";
+import {highlightHtml} from "./dp_highlight.js";
 
 // Shared editor setup. `language` is the promptLanguage() configuration for this editor.
 function editorExtensions({language, onChange, onSave} = {}) {
@@ -190,6 +191,9 @@ window.setSdPromptLabEditorDocument = (view, doc = "") => {
 
 // Syntax-aware tidying used by the Create tab's Reformat / Clean Up buttons.
 window.sdPromptLabFormat = {reformat: reformatPrompt, cleanUp: cleanUpPrompt};
+
+// HTML with the editor's token classes, for static excerpts (Browse cards).
+window.sdPromptLabHighlightHtml = highlightHtml;
 
 // {path, from, to} of the wildcard reference at a document position, or null.
 window.sdPromptLabWildcardAt = wildcardAt;

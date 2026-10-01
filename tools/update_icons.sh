@@ -8,7 +8,7 @@
 # only built at runtime).
 set -euo pipefail
 
-ICONS="check_circle warning error help folder folder_open description close delete edit_note spellcheck casino content_copy"
+ICONS="check_circle warning error help folder folder_open description close delete edit_note spellcheck casino content_copy visibility favorite upload inbox search"
 
 found=$(
   {

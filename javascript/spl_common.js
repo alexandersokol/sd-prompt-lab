@@ -113,20 +113,31 @@
     // Gradio tab buttons carry no id, so a button is found through its panel: the Nth
     // `.tabitem` of a tab group is opened by the Nth button of that group's `.tab-nav`.
 
-    function tabButton(panelId) {
+    function tabParts(panelId) {
         const panel = gradioApp()?.getElementById(panelId);
         const group = panel?.parentElement;
         if (!group) return null;
         const panels = Array.from(group.children).filter((el) => el.classList.contains('tabitem'));
         const nav = Array.from(group.children).find((el) => el.classList.contains('tab-nav'));
-        const buttons = nav ? Array.from(nav.querySelectorAll('button')) : [];
-        return buttons[panels.indexOf(panel)] || null;
+        if (!nav) return null;
+        return {nav, index: panels.indexOf(panel)};
     }
 
+    function tabButton(panelId) {
+        const parts = tabParts(panelId);
+        return parts ? parts.nav.querySelectorAll('button')[parts.index] || null : null;
+    }
+
+    // Runs `callback` every time the tab is opened. Gradio re-creates a tab's button when
+    // its selected state changes, so the listener sits on the (stable) nav container.
     function onTabOpened(panelId, callback) {
-        const button = tabButton(panelId);
-        if (!button) return false;
-        button.addEventListener('click', () => callback());
+        const parts = tabParts(panelId);
+        if (!parts) return false;
+        parts.nav.addEventListener('click', (event) => {
+            const button = event.target.closest('button');
+            if (!button || !parts.nav.contains(button)) return;
+            if (Array.from(parts.nav.querySelectorAll('button')).indexOf(button) === parts.index) callback();
+        });
         return true;
     }
 

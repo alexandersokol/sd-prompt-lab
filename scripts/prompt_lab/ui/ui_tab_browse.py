@@ -1,17 +1,37 @@
 import gradio as gr
-from modules import ui_components
 
 
 def ui_tab_browse():
-    with gr.Column():
-        with gr.Row():
-            gr.Textbox(label='Search', elem_id="sd-prompt-lab-search-input")
-            ui_components.ToolButton(value='🗑',
-                                     elem_id="sd-prompt-lab-clear-search-button",
-                                     tooltip="Clear search")
-            refresh_button = ui_components.ToolButton(value='🔄',
-                                                      elem_id="sd-prompt-lab-refresh-button",
-                                                      tooltip="Refresh prompts")
+    gr.HTML("""
+        <div id="sd-prompt-lab-browse-root" class="spl-theme spl-browse">
+            <div class="spl-browse-toolbar">
+                <label class="spl-browse-search">
+                    <span class="material-symbols-rounded" aria-hidden="true">search</span>
+                    <input id="sd-prompt-lab-browse-search" placeholder="Search name, description or prompt"
+                           autocomplete="off">
+                </label>
+                <label class="spl-browse-sort">
+                    <span class="spl-browse-sort-label">Sort</span>
+                    <select id="sd-prompt-lab-browse-sort">
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                        <option value="name">Name (A–Z)</option>
+                    </select>
+                </label>
+                <button type="button" id="sd-prompt-lab-browse-favorites" class="spl-btn" aria-pressed="false"
+                        title="Show favourites only">
+                    <span class="material-symbols-rounded" aria-hidden="true">favorite</span>
+                    <span>Favourites</span>
+                </button>
+                <div id="sd-prompt-lab-browse-count" class="spl-browse-count"></div>
+                <button type="button" id="sd-prompt-lab-browse-refresh" class="spl-btn spl-btn-icon"
+                        title="Refresh" aria-label="Refresh">
+                    <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+                </button>
+            </div>
 
-        cards_output = gr.HTML(elem_id='sd-prompt-lab-cards-output')
-    return refresh_button, cards_output
+            <div id="sd-prompt-lab-browse-grid" class="spl-browse-grid"></div>
+            <div id="sd-prompt-lab-browse-empty" class="spl-browse-empty" hidden></div>
+            <div id="sd-prompt-lab-browse-more" class="spl-browse-more" aria-hidden="true"></div>
+        </div>
+    """)

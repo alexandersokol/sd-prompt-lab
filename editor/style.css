@@ -1,138 +1,138 @@
 /* ---- Prompt language highlighting (classes come from editor/dp_extensions.js) ---- */
-.cm-content .spl-tok-comment {
+:is(.cm-content, .spl-highlight) .spl-tok-comment {
     color: #6b7a90;
     font-style: italic;
 }
 
-.cm-content .spl-tok-lora {
+:is(.cm-content, .spl-highlight) .spl-tok-lora {
     color: lightpink;
 }
 
-.cm-content .spl-tok-common {
+:is(.cm-content, .spl-highlight) .spl-tok-common {
     color: #82bc82;
 }
 
-.cm-content .spl-tok-unwanted {
+:is(.cm-content, .spl-highlight) .spl-tok-unwanted {
     color: #c65d5d;
     font-weight: bold;
 }
 
 /* {} variants, %{} wrap commands and their | separators: coloured by nesting depth */
-.cm-content .spl-tok-brace,
-.cm-content .spl-tok-wrap,
-.cm-content .spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-tok-pipe {
     font-weight: bold;
 }
 
-.cm-content .spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-tok-pipe {
     color: #C69CFF;
 }
 
-.cm-content .spl-depth-1.spl-tok-brace,
-.cm-content .spl-depth-1.spl-tok-wrap,
-.cm-content .spl-depth-1.spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-depth-1.spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-depth-1.spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-depth-1.spl-tok-pipe {
     color: #80d4ff;
 }
 
-.cm-content .spl-depth-2.spl-tok-brace,
-.cm-content .spl-depth-2.spl-tok-wrap,
-.cm-content .spl-depth-2.spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-depth-2.spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-depth-2.spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-depth-2.spl-tok-pipe {
     color: #5ED3B5;
 }
 
-.cm-content .spl-depth-3.spl-tok-brace,
-.cm-content .spl-depth-3.spl-tok-wrap,
-.cm-content .spl-depth-3.spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-depth-3.spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-depth-3.spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-depth-3.spl-tok-pipe {
     color: #C69CFF;
 }
 
-.cm-content .spl-depth-4.spl-tok-brace,
-.cm-content .spl-depth-4.spl-tok-wrap,
-.cm-content .spl-depth-4.spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-depth-4.spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-depth-4.spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-depth-4.spl-tok-pipe {
     color: #A1F2C3;
 }
 
-.cm-content .spl-depth-5.spl-tok-brace,
-.cm-content .spl-depth-5.spl-tok-wrap,
-.cm-content .spl-depth-5.spl-tok-pipe {
+:is(.cm-content, .spl-highlight) .spl-depth-5.spl-tok-brace,
+:is(.cm-content, .spl-highlight) .spl-depth-5.spl-tok-wrap,
+:is(.cm-content, .spl-highlight) .spl-depth-5.spl-tok-pipe {
     color: #7FBFFF;
 }
 
 /* A1111 (emphasis) and [alternation] */
-.cm-content .spl-tok-paren,
-.cm-content .spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-tok-bracket {
     font-weight: bold;
 }
 
-.cm-content .spl-depth-1.spl-tok-paren,
-.cm-content .spl-depth-1.spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-depth-1.spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-depth-1.spl-tok-bracket {
     color: #FFD700;
 }
 
-.cm-content .spl-depth-2.spl-tok-paren,
-.cm-content .spl-depth-2.spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-depth-2.spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-depth-2.spl-tok-bracket {
     color: #FFA500;
 }
 
-.cm-content .spl-depth-3.spl-tok-paren,
-.cm-content .spl-depth-3.spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-depth-3.spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-depth-3.spl-tok-bracket {
     color: #FF8C00;
 }
 
-.cm-content .spl-depth-4.spl-tok-paren,
-.cm-content .spl-depth-4.spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-depth-4.spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-depth-4.spl-tok-bracket {
     color: #FF6347;
 }
 
-.cm-content .spl-depth-5.spl-tok-paren,
-.cm-content .spl-depth-5.spl-tok-bracket {
+:is(.cm-content, .spl-highlight) .spl-depth-5.spl-tok-paren,
+:is(.cm-content, .spl-highlight) .spl-depth-5.spl-tok-bracket {
     color: #FF4500;
 }
 
 /* variant prefix: {~2$$ and $$0.5::a|b} */
-.cm-content .spl-tok-weight {
+:is(.cm-content, .spl-highlight) .spl-tok-weight {
     color: #d7ba7d;
     font-weight: 700;
 }
 
-.cm-content .spl-tok-bound {
+:is(.cm-content, .spl-highlight) .spl-tok-bound {
     color: #7FBFFF;
     font-weight: 700;
 }
 
-.cm-content .spl-tok-separator {
+:is(.cm-content, .spl-highlight) .spl-tok-separator {
     color: #ce9178;
 }
 
-.cm-content .spl-tok-sampler {
+:is(.cm-content, .spl-highlight) .spl-tok-sampler {
     color: #ff9ecb;
     font-weight: 700;
 }
 
 /* __wildcard/path(params)__ */
-.cm-content .spl-tok-wildcard {
+:is(.cm-content, .spl-highlight) .spl-tok-wildcard {
     color: #FFA500;
     font-weight: bold;
 }
 
-.cm-content .spl-tok-wildcardParams {
+:is(.cm-content, .spl-highlight) .spl-tok-wildcardParams {
     color: #ffd9a0;
     font-weight: normal;
 }
 
 /* ${name=value} and ${name} */
-.cm-content .spl-tok-variableSet {
+:is(.cm-content, .spl-highlight) .spl-tok-variableSet {
     color: #4fc1ff;
     font-weight: 700;
 }
 
-.cm-content .spl-tok-variableUse {
+:is(.cm-content, .spl-highlight) .spl-tok-variableUse {
     color: #9cdcfe;
     font-weight: 700;
 }
 
 /* The {} block the cursor is in */
-.cm-content .spl-active-block {
+:is(.cm-content, .spl-highlight) .spl-active-block {
     background: rgba(99, 168, 255, 0.16);
     border-radius: 3px;
     box-decoration-break: clone;
@@ -159,7 +159,7 @@
 }
 
 /* Misspelled word */
-.cm-content .spl-misspelled {
+:is(.cm-content, .spl-highlight) .spl-misspelled {
     text-decoration: underline wavy rgba(255, 213, 0, 0.6);
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
@@ -178,7 +178,9 @@
 }
 
 
-#sd-prompt-lab-wildcard-editor-root {
+/* Palette shared by the Create, Browse and Wildcard Editor tabs. */
+#sd-prompt-lab-wildcard-editor-root,
+.spl-theme {
     --spl-bg: #090f18;
     --spl-editor: #1F2937;
     --spl-panel: #111827;

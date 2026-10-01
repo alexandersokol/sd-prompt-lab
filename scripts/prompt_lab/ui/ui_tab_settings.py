@@ -77,6 +77,38 @@ def ui_tab_settings():
                     </button>
                 </div>
 
+                <div class="spl-set-row">
+                    <div class="spl-set-row-text">
+                        <div class="spl-set-row-title">Export prompts</div>
+                        <div class="spl-set-row-desc">
+                            Download every saved prompt, with its image, as one JSON file.
+                        </div>
+                    </div>
+                    <a id="spl-set-export" class="spl-set-btn" href="/sd-prompt-lab/export"
+                       download="sd-prompt-lab-prompts.json">
+                        <span class="material-symbols-rounded" aria-hidden="true">download</span>
+                        <span>Export</span>
+                    </a>
+                </div>
+
+                <div class="spl-set-row">
+                    <div class="spl-set-row-text">
+                        <div class="spl-set-row-title">Import prompts</div>
+                        <div class="spl-set-row-desc">
+                            Load prompts from an exported file. When a name already exists:
+                            <select id="spl-set-import-conflict" class="spl-set-select">
+                                <option value="skip">keep mine</option>
+                                <option value="overwrite">replace mine</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" id="spl-set-import" class="spl-set-btn">
+                        <span class="material-symbols-rounded" aria-hidden="true">upload</span>
+                        <span>Import</span>
+                    </button>
+                    <input id="spl-set-import-file" type="file" accept="application/json,.json" hidden>
+                </div>
+
                 <div id="spl-set-status" class="spl-set-status"></div>
             </section>
 
