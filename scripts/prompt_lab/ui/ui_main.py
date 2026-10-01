@@ -9,7 +9,6 @@ from scripts.prompt_lab.ui.ui_tab_create import ui_tab_create
 from scripts.prompt_lab.ui.ui_tab_tag_browser import ui_tab_tag_browser
 from scripts.prompt_lab.ui.ui_tab_tag_validator import ui_tab_tag_validator
 from scripts.prompt_lab.ui.ui_tab_wildcard_editor import ui_tab_wildcard_editor
-from scripts.prompt_lab.ui.ui_tab_wildcards import ui_tab_wildcards
 
 
 def ui_main_block():
@@ -22,10 +21,6 @@ def ui_main_block():
                 ui_tab_browse()
 
         if os.path.exists(utils.get_wildcards_dir()):
-            with gr.Tab("Wildcards", elem_id='sd-prompt-lab-wildcards-tab'):
-                with gr.Column():
-                    ui_tab_wildcards()
-
             with gr.Tab("Wildcard Editor", elem_id='sd-prompt-lab-wildcard-editor-tab'):
                 with gr.Column():
                     ui_tab_wildcard_editor()
