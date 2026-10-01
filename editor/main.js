@@ -356,7 +356,67 @@ window.initCodeMirror6 = (selector) => {
     window.sdPromptLabEditor = view;
 };
 
+function wildcardEditorExtensions(onChange) {
+    return [
+        oneDark,
+        EditorView.lineWrapping,
+        lineNumbers(),
+        foldGutter(),
+        highlightSpecialChars(),
+        history(),
+        drawSelection(),
+        dropCursor(),
+        EditorState.allowMultipleSelections.of(true),
+        indentOnInput(),
+        wildcardLanguage,
+        syntaxHighlighting(classHighlighter),
+        bracketMatching(),
+        closeBrackets(),
+        autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
+        rectangularSelection(),
+        crosshairCursor(),
+        highlightActiveLine(),
+        highlightActiveLineGutter(),
+        highlightSelectionMatches(),
+        EditorView.updateListener.of((update) => {
+            if (update.docChanged && typeof onChange === "function") {
+                onChange(update.state.doc.toString());
+            }
+        }),
+        keymap.of([
+            indentWithTab,
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...searchKeymap,
+            ...historyKeymap,
+            ...foldKeymap,
+            ...completionKeymap
+        ])
+    ];
+}
+
+// A standalone editor state (own document, undo history and selection). The Wildcard
+// Editor keeps one per open file and swaps them into its single view with setState().
+window.createSdPromptLabEditorState = ({doc = "", onChange} = {}) => {
+    return EditorState.create({doc, extensions: wildcardEditorExtensions(onChange)});
+};
+
 window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange} = {}) => {
+    if (!parent) return null;
+
+    loadPredefinedPrompts();
+
+    const view = new EditorView({
+        state: window.createSdPromptLabEditorState({doc, onChange}),
+        parent
+    });
+
+    view.dom.classList.add("sd-prompt-lab-wildcard-codemirror");
+    return view;
+};
+
+// Read-only, highlighted prompt view (Browse preview popup).
+window.createSdPromptLabReadOnlyView = ({parent, doc = ""} = {}) => {
     if (!parent) return null;
 
     loadPredefinedPrompts();
@@ -367,44 +427,17 @@ window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange} = {}) => 
             extensions: [
                 oneDark,
                 EditorView.lineWrapping,
-                lineNumbers(),
-                foldGutter(),
+                EditorState.readOnly.of(true),
+                EditorView.editable.of(false),
                 highlightSpecialChars(),
-                history(),
-                drawSelection(),
-                dropCursor(),
-                EditorState.allowMultipleSelections.of(true),
-                indentOnInput(),
-                wildcardLanguage,
-                syntaxHighlighting(classHighlighter),
-                bracketMatching(),
-                closeBrackets(),
-                autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
-                rectangularSelection(),
-                crosshairCursor(),
-                highlightActiveLine(),
-                highlightActiveLineGutter(),
-                highlightSelectionMatches(),
-                EditorView.updateListener.of((update) => {
-                    if (update.docChanged && typeof onChange === "function") {
-                        onChange(update.state.doc.toString());
-                    }
-                }),
-                keymap.of([
-                    indentWithTab,
-                    ...closeBracketsKeymap,
-                    ...defaultKeymap,
-                    ...searchKeymap,
-                    ...historyKeymap,
-                    ...foldKeymap,
-                    ...completionKeymap
-                ])
+                customLanguage,
+                syntaxHighlighting(classHighlighter)
             ]
         }),
         parent
     });
 
-    view.dom.classList.add("sd-prompt-lab-wildcard-codemirror");
+    view.dom.classList.add("sd-prompt-lab-readonly-codemirror");
     return view;
 };
 
