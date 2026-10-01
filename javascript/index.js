@@ -118,6 +118,23 @@ function showErrorMessage(content) {
     }
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch]));
+}
+
+// Prompts shown in the Browse tab, keyed by id (card buttons look their prompt up here).
+const loadedPrompts = new Map();
+
+function setOverrideChecked(checked) {
+    const overrideBlock = gradioApp().getElementById('sd-prompt-lab-override-checkbox');
+    const checkbox = overrideBlock?.querySelector('input[type="checkbox"]');
+    if (!checkbox || checkbox.checked === checked) return;
+    checkbox.checked = checked;
+    checkbox.dispatchEvent(new Event('change', {bubbles: true}));
+}
+
 function getSearchInputText() {
     const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
     return searchInput.querySelector('textarea')?.value || '';
@@ -128,7 +145,6 @@ function fillCreateTabFields(prompt) {
     const nameInput = gradioApp().getElementById('sd-prompt-lab-name-input');
     const descInput = gradioApp().getElementById('sd-prompt-lab-description-input');
     const imagePathInput = gradioApp().getElementById('sd-prompt-lab-image-path-input');
-    const overrideBlock = gradioApp().getElementById('sd-prompt-lab-override-checkbox');
 
     // Find textarea inside Gradio block
     const getTextArea = (block) => block ? block.querySelector('textarea') : null;
@@ -148,11 +164,8 @@ function fillCreateTabFields(prompt) {
         });
     }
 
-    // Set override checkbox
-    if (overrideBlock) {
-        const checkbox = overrideBlock.querySelector('input[type="checkbox"]');
-        if (checkbox) checkbox.checked = true;
-    }
+    // A freshly opened prompt never starts with "Override existing" ticked.
+    setOverrideChecked(false);
 }
 
 
@@ -180,6 +193,9 @@ const loadCards = async () => {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to load prompts');
         const data = await response.json();
+
+        loadedPrompts.clear();
+        data.prompts.forEach(p => loadedPrompts.set(String(p.id), p));
 
         let html = `<div style="
                 display: flex;
@@ -220,8 +236,8 @@ const loadCards = async () => {
 
                         <!-- Main content -->
                         <div style="flex: 1;">
-                            <div style="font-weight: bold; color: #eee; font-size: 18px;">${p.name}</div>
-                            ${p.description ? `<div style="color: #aaa; font-size: 13px; margin-top: 4px;">${p.description}</div>` : ''}
+                            <div style="font-weight: bold; color: #eee; font-size: 18px;">${escapeHtml(p.name)}</div>
+                            ${p.description ? `<div style="color: #aaa; font-size: 13px; margin-top: 4px;">${escapeHtml(p.description)}</div>` : ''}
                             <div style="
                                 margin-top: 8px;
                                 margin-right: ${thumbnail ? '145px' : '0'};
@@ -235,7 +251,7 @@ const loadCards = async () => {
                                 display: -webkit-box;
                                 -webkit-line-clamp: 12; /* approximate line limit for 200px */
                                 -webkit-box-orient: vertical;
-                            ">${p.prompt}</div>
+                            ">${escapeHtml(p.prompt)}</div>
 
                         </div>
 
@@ -243,9 +259,18 @@ const loadCards = async () => {
                         <div style="
                             margin-top: 12px;
                             display: flex;
+                            flex-wrap: wrap;
                             gap: 8px;
                         ">
-                            <button data-id="${p.id}" data-action="txt2img" data-prompt="${p.prompt}" style="
+                            <button data-id="${p.id}" data-action="preview" style="
+                                padding: 4px 10px;
+                                background: #333;
+                                color: #ddd;
+                                border: 1px solid #555;
+                                border-radius: 6px;
+                                cursor: pointer;
+                            ">👁 preview</button>
+                            <button data-id="${p.id}" data-action="txt2img" style="
                                 padding: 4px 10px;
                                 background: #333;
                                 color: #ddd;
@@ -253,7 +278,7 @@ const loadCards = async () => {
                                 border-radius: 6px;
                                 cursor: pointer;
                             ">🖼 txt2img</button>
-                            <button data-id="${p.id}" data-action="edit" data-prompt="${p.prompt}" style="
+                            <button data-id="${p.id}" data-action="edit" style="
                                 padding: 4px 10px;
                                 background: #333;
                                 color: #ddd;
@@ -269,7 +294,7 @@ const loadCards = async () => {
                                 border-radius: 6px;
                                 cursor: pointer;
                             ">🗑 remove</button>
-                            <button data-id="${p.id}" data-action="copy" data-prompt="${p.prompt}" style="
+                            <button data-id="${p.id}" data-action="copy" style="
                                 padding: 4px 10px;
                                 background: #333;
                                 color: #ddd;
@@ -294,7 +319,7 @@ const loadCards = async () => {
         cardsContainer.innerHTML = html;
 
     } catch (e) {
-        cardsContainer.innerHTML = `<div style="color: red;">${e.message}</div>`;
+        cardsContainer.innerHTML = `<div style="color: red;">${escapeHtml(e.message)}</div>`;
     }
 };
 
@@ -327,9 +352,14 @@ function setupBrowseTab() {
             if (!btn) return;
             const id = btn.dataset.id;
             const action = btn.dataset.action;
-            const promptText = btn.dataset.prompt || '';
+            const prompt = loadedPrompts.get(String(id));
+            const promptText = prompt?.prompt || '';
 
-            if (action === 'favorite') {
+            if (action === 'preview') {
+                if (prompt && typeof window.sdPromptLabShowPreview === 'function') {
+                    window.sdPromptLabShowPreview(prompt);
+                }
+            } else if (action === 'favorite') {
                 const isFavorite = btn.dataset.favorite === '1'; // because it's "0" or "1"
                 const newFavorite = !isFavorite;
 
@@ -415,11 +445,7 @@ function setupClearFieldsButton() {
                 });
             }
 
-            const checkbox = overrideBlock.querySelector('input[type="checkbox"]');
-            if (checkbox) {
-                checkbox.checked = false;
-                checkbox.dispatchEvent(new Event('change', {bubbles: true}));
-            }
+            setOverrideChecked(false);
 
             showInfoMessage('Fields cleared');
         });
@@ -466,6 +492,7 @@ function setupSaveButton() {
 
                 if (response.ok) {
                     showInfoMessage('Saved successfully');
+                    loadCards();   // keep the Browse tab in sync with the saved prompt
                 } else {
                     const error = await response.json();
                     throw new Error(error.detail || "Unknown error");
