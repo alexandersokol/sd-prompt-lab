@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 
 import scripts.prompt_lab.sd_promt_lab_env as env
@@ -233,6 +234,20 @@ def clear_prompt_words():
         c = conn.cursor()
         c.execute("DELETE FROM prompt_words")
         conn.commit()
+
+
+def known_prompt_words(words):
+    """Subset of `words` (lower-case) that appear as a word in the saved autocompletion prompts."""
+    wanted = set(words)
+    if not wanted:
+        return set()
+    known = set()
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("SELECT word FROM prompt_words")
+        for (saved,) in c.fetchall():
+            known.update(wanted.intersection(re.findall(r"[a-z]+", saved.lower())))
+    return known
 
 
 # Known settings and their defaults; unknown keys are ignored on write.

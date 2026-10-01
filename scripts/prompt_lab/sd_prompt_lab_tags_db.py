@@ -641,6 +641,32 @@ def get_tag_detail(name):
         return {"name": row[0], "metadata": metadata, "sources": sources}
 
 
+def known_tag_words(words):
+    """Subset of `words` (lower-case) that the tag cache knows.
+
+    A word is known when it is a tag itself or the first word of a tag ("zettai" for
+    "zettai_ryouiki"). Read-only: never triggers a cache rebuild.
+    """
+    known = set()
+    if not words or not os.path.isfile(os.path.join(get_cache_dir(), _CACHE_DB_NAME)):
+        return known
+    try:
+        with connect() as conn:
+            c = conn.cursor()
+            for word in words:
+                # Range scan on the NOCASE primary key: tags starting with "word_" / "word ".
+                c.execute(
+                    "SELECT 1 FROM tags WHERE name = ? "
+                    "OR (name >= ? AND name < ?) OR (name >= ? AND name < ?) LIMIT 1",
+                    (word, word + "_", word + "`", word + " ", word + "!"),
+                )
+                if c.fetchone():
+                    known.add(word)
+    except sqlite3.Error:
+        pass
+    return known
+
+
 # ---------------------------------------------------------------------------
 # Preset dataset download
 # ---------------------------------------------------------------------------

@@ -56,6 +56,10 @@ class PromptWordUpdate(BaseModel):
     word: str
 
 
+class SpellCheckRequest(BaseModel):
+    words: list[str]
+
+
 class ValidatorCardsCreate(BaseModel):
     texts: list[str]
 
@@ -423,6 +427,15 @@ def init_api(app: FastAPI):
         db.set_settings(values)
         return db.get_settings()
 
+    # Second-stage spell check: the editor sends words its English word list does not know;
+    # words found in the tag cache or the saved autocompletion prompts are accepted.
+    @app.post("/sd-prompt-lab/spell/check")
+    def spell_check(data: SpellCheckRequest):
+        words = sorted({w.strip().lower() for w in data.words[:2000] if w.strip()})
+        known = db.known_prompt_words(words)
+        known |= tags_db.known_tag_words([w for w in words if w not in known])
+        return {"unknown": [w for w in words if w not in known]}
+
     @app.get("/sd-prompt-lab/{prompt_id}")
     async def get_prompt(prompt_id: int):
         try:
@@ -448,6 +461,10 @@ def init_api(app: FastAPI):
             return {"tree": []}
 
         return {"tree": _build_wildcards_editor_tree(root)}
+
+    @app.get("/sd-prompt-lab/wildcards/names")
+    def get_wildcard_names():
+        return utils.list_wildcard_names(_wildcards_root())
 
     @app.get("/sd-prompt-lab/wildcards/editor/search")
     def search_wildcards_content(q: str = Query("")):

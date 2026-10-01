@@ -1,3 +1,4 @@
+import json
 import os
 import re
 
@@ -192,3 +193,49 @@ def search_wildcard_files(root: str, query: str) -> list:
             except OSError:
                 continue
     return sorted(matches)
+
+
+_STRUCTURED_WILDCARD_EXTS = (".yaml", ".yml", ".json")
+
+
+def _collect_structured_names(node, prefix, names):
+    """Walk a YAML/JSON wildcard collection: every key path that holds a list is a wildcard."""
+    if not isinstance(node, dict):
+        return
+    for key, value in node.items():
+        path = f"{prefix}/{key}" if prefix else str(key)
+        if isinstance(value, list):
+            names.add(path)
+        elif isinstance(value, dict):
+            _collect_structured_names(value, path, names)
+
+
+def list_wildcard_names(root: str) -> dict:
+    """All wildcard names available under root, for validating __path__ references.
+
+    Returns {exists, complete, names}. `complete` is False when a YAML/JSON collection could
+    not be read, in which case callers should not report unknown wildcards as missing.
+    """
+    if not os.path.isdir(root):
+        return {"exists": False, "complete": False, "names": []}
+
+    names, complete = set(), True
+    for current, _, files in os.walk(root):
+        for name in files:
+            base, ext = os.path.splitext(name)
+            ext = ext.lower()
+            path = os.path.join(current, name)
+            if ext == ".txt":
+                names.add(os.path.relpath(os.path.join(current, base), root).replace(os.sep, "/"))
+            elif ext in _STRUCTURED_WILDCARD_EXTS:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        if ext == ".json":
+                            data = json.load(f)
+                        else:
+                            import yaml
+                            data = yaml.safe_load(f)
+                    _collect_structured_names(data, "", names)
+                except Exception:
+                    complete = False
+    return {"exists": True, "complete": complete, "names": sorted(names)}
