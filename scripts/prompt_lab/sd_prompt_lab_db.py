@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 
@@ -51,6 +52,7 @@ def init_db():
                         word TEXT NOT NULL UNIQUE
                     )
                 """)
+        c.execute("CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)")
         conn.commit()
         migrate_add_favorite()
 
@@ -189,3 +191,78 @@ def search_prompt_words(query: str, limit: int = 30):
         like_query = f"%{query}%"
         c.execute("SELECT DISTINCT word FROM prompt_words WHERE word LIKE ? LIMIT ?", (like_query, limit))
         return [row[0] for row in c.fetchall()]
+
+
+def list_prompt_words(q: str = None, limit: int = 200, offset: int = 0):
+    where, params = "", []
+    if q:
+        where = " WHERE word LIKE ?"
+        params.append(f"%{q}%")
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM prompt_words{where}", params)
+        total = c.fetchone()[0]
+        c.execute(
+            f"SELECT id, word FROM prompt_words{where} ORDER BY word COLLATE NOCASE LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        )
+        return {"words": [{"id": row[0], "word": row[1]} for row in c.fetchall()], "total": total}
+
+
+def rename_prompt_word(word_id: int, word: str):
+    """Returns 'ok', 'missing' (no such id) or 'conflict' (the word already exists)."""
+    with connect() as conn:
+        c = conn.cursor()
+        try:
+            c.execute("UPDATE prompt_words SET word = ? WHERE id = ?", (word, word_id))
+        except sqlite3.IntegrityError:
+            return "conflict"
+        conn.commit()
+        return "ok" if c.rowcount > 0 else "missing"
+
+
+def delete_prompt_word(word_id: int):
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM prompt_words WHERE id = ?", (word_id,))
+        conn.commit()
+
+
+def clear_prompt_words():
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM prompt_words")
+        conn.commit()
+
+
+# Known settings and their defaults; unknown keys are ignored on write.
+DEFAULT_SETTINGS = {"spell_check": True}
+
+
+def get_settings():
+    settings = dict(DEFAULT_SETTINGS)
+    with connect() as conn:
+        c = conn.cursor()
+        c.execute("SELECT k, v FROM settings")
+        for key, value in c.fetchall():
+            if key not in DEFAULT_SETTINGS:
+                continue
+            try:
+                settings[key] = json.loads(value)
+            except (ValueError, TypeError):
+                pass
+    return settings
+
+
+def set_settings(values: dict):
+    with connect() as conn:
+        c = conn.cursor()
+        for key, value in values.items():
+            if key not in DEFAULT_SETTINGS:
+                continue
+            c.execute(
+                "INSERT INTO settings (k, v) VALUES (?, ?) "
+                "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                (key, json.dumps(value)),
+            )
+        conn.commit()

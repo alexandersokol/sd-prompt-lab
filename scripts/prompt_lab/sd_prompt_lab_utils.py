@@ -61,40 +61,137 @@ def get_wildcards_dir():
     return os.path.join(get_extensions_dir(), "sd-dynamic-prompts", "wildcards")
 
 
-def parse_prompts(raw_prompt: str) -> list:
-    """Parses a prompt string, expands variations, and ignores __wrapped__ prompts and weights like :0.2"""
-    prompts = []
+_MAX_WORD_LENGTH = 80
+_MAX_VARIANT_EXPANSIONS = 64
+_INNER_VARIANT_RE = re.compile(r"\{([^{}]*)\}")
+# Variant prefix: optional sampler, optional bound ("2$$", "1-3$$") and custom separator.
+_VARIANT_PREFIX_RE = re.compile(r"\{\s*[~!@]?\s*(?:\d*-?\d*\$\$(?:[^${}]*\$\$)?)?")
+_WILDCARD_RE = re.compile(r"__(?:(?!__)[^\n{}#$(])+(?:\([^)\n]*\))?__")
 
-    # Split by comma, newline, or pipe
-    parts = re.split(r'[,\n|]+', raw_prompt)
-    parts = [p.strip() for p in parts if p.strip()]
 
-    for part in parts:
-        # Ignore __wrapped__ parts
-        if re.match(r"^__.+__$", part):
-            continue
-
-        # Remove weight suffix like ":0.2"
-        part = re.sub(r":[0-9.]+$", "", part).strip()
-
-        # Skip empty after removing weight
-        if not part:
-            continue
-
-        # Find variations inside {...}
-        match = re.search(r"\{([^}]+)\}", part)
-        if match:
-            variations = match.group(1).split("|")
-            variations = [v.strip() for v in variations if v.strip()]
-            for var in variations:
-                expanded = part.replace(match.group(0), var)
-                if expanded.strip():
-                    prompts.append(expanded.strip())
+def _strip_variables(text: str) -> str:
+    """Remove ${...} variable assignments/accesses, honouring nested braces."""
+    out = []
+    i = 0
+    while i < len(text):
+        if text.startswith("${", i):
+            depth = 1
+            j = i + 2
+            while j < len(text) and depth:
+                if text[j] == "{":
+                    depth += 1
+                elif text[j] == "}":
+                    depth -= 1
+                j += 1
+            out.append(",")
+            i = j
         else:
-            prompts.append(part)
+            out.append(text[i])
+            i += 1
+    return "".join(out)
 
-    # Remove duplicates and any that still contain '__'
-    return list(sorted({p for p in prompts if '__' not in p}))
+
+def _split_top_level(text: str) -> list:
+    """Split on commas/newlines that are not inside a {} variant."""
+    parts, depth, cur = [], 0, []
+    for ch in text:
+        if ch == "{":
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+        if ch in ",\n" and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
+def _expand_variants(segment: str) -> list:
+    """Expand {a|b} variants (innermost first) into every combination, capped."""
+    results = [segment]
+    while True:
+        expanded, changed = [], False
+        for item in results:
+            match = _INNER_VARIANT_RE.search(item)
+            if not match:
+                expanded.append(item)
+                continue
+            changed = True
+            for option in match.group(1).split("|"):
+                # Inner commas split again below, so mark the option boundaries.
+                expanded.append(item[:match.start()] + option + item[match.end():])
+        results = expanded[:_MAX_VARIANT_EXPANSIONS]
+        if not changed:
+            return results
+
+
+def _clean_word(candidate: str):
+    # A1111 weight suffix: "(tag:1.2)" -> "(tag)".
+    candidate = re.sub(r":\s*-?\d*\.?\d+(?=\s*[)\]]|\s*$)", "", candidate)
+    candidate = re.sub(r"[()\[\]{}<>]", " ", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip(" \t.;\\")
+    if not candidate or len(candidate) > _MAX_WORD_LENGTH:
+        return None
+    if re.fullmatch(r"[\d.\s]+", candidate):
+        return None
+    if re.search(r"[|$#]|__", candidate):
+        return None
+    return candidate
+
+
+def parse_prompts(raw_prompt: str) -> list:
+    """Extract clean autocompletion words from a prompt.
+
+    Dynamic-prompt syntax (comments, wildcards, variables, variant bounds/weights), lora
+    tags, BREAK and A1111 weights/brackets are removed; {a|b} variants are expanded.
+    """
+    text = raw_prompt or ""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"(?m)(#|//).*$", " ", text)
+    text = re.sub(r"<[^<>\n]*>", ",", text)
+    text = _strip_variables(text)
+    text = _WILDCARD_RE.sub(",", text)
+    text = re.sub(r"\bBREAK\b", ",", text)
+    text = _VARIANT_PREFIX_RE.sub("{", text)
+    text = re.sub(r"(?<![\w.])\d*\.?\d+::", "", text)
+
+    prompts, seen = [], set()
+    for segment in _split_top_level(text):
+        for expanded in _expand_variants(segment):
+            for candidate in re.split(r"[,\n|]+", expanded):
+                word = _clean_word(candidate)
+                if word is None or word.lower() in seen:
+                    continue
+                seen.add(word.lower())
+                prompts.append(word)
+    return prompts
+
+
+_MAX_SEARCH_FILE_SIZE = 5 * 1024 * 1024
+
+
+def search_wildcard_files(root: str, query: str) -> list:
+    """Return posix-relative paths of .txt files under root whose content contains query."""
+    needle = (query or "").strip().lower()
+    if not needle or not os.path.isdir(root):
+        return []
+    matches = []
+    for current, _, files in os.walk(root):
+        for name in files:
+            if not name.endswith(".txt"):
+                continue
+            path = os.path.join(current, name)
+            try:
+                if os.path.getsize(path) > _MAX_SEARCH_FILE_SIZE:
+                    continue
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    if needle in f.read().lower():
+                        matches.append(os.path.relpath(path, root).replace(os.sep, "/"))
+            except OSError:
+                continue
+    return sorted(matches)
 
 
 def list_txt_files(directory, base=""):
