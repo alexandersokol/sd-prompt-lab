@@ -94,7 +94,8 @@ Warnings (amber underline):
 |---|---|
 | `wildcard-missing` | no file matches the wildcard path (see resolver) |
 | `variable-undefined` | `${name}` with no default and no earlier assignment in the document (skipped in wildcard-file mode, where variables come from the caller) |
-| `empty-option` | empty variant option such as `{a||b}` or `{|a}` — legal but usually a typo |
+
+Empty variant options such as `{a||b}` or `{|a}` are valid and produce no diagnostic.
 
 ### `editor/dp_extensions.js` (CodeMirror glue)
 
