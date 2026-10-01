@@ -78,7 +78,9 @@ const sdPromptLabWildcardEditor = (() => {
         }
 
         if (!response.ok) {
-            throw new Error(data.detail || `Request failed: ${response.status}`);
+            const error = new Error(data.detail || `Request failed: ${response.status}`);
+            error.status = response.status;
+            throw error;
         }
         return data;
     }
@@ -492,7 +494,6 @@ const sdPromptLabWildcardEditor = (() => {
         if (state.editor) return;
 
         const host = getEl(ids.host);
-        host.innerHTML = '';
         state.editor = window.createSdPromptLabWildcardEditor({parent: host, doc: ''});
 
         host.addEventListener('click', handleEditorLinkClick);
@@ -500,12 +501,22 @@ const sdPromptLabWildcardEditor = (() => {
         measureEditorSoon();
     }
 
-    // Detached empty state shown while no file is open.
+    // The editor is only shown while a file is open; otherwise the "Open a wildcard
+    // file" placeholder takes its place (an empty editable view would accept typing
+    // that goes nowhere).
+    function setEditorVisible(visible) {
+        const placeholder = getEl(ids.host)?.querySelector('.spl-ide-empty');
+        if (placeholder) placeholder.style.display = visible ? 'none' : '';
+        if (!state.editor) return;
+        // The editor stylesheet sets display with !important, so match it to hide.
+        if (visible) state.editor.dom.style.removeProperty('display');
+        else state.editor.dom.style.setProperty('display', 'none', 'important');
+    }
+
     function showBlankEditor() {
         if (!state.editor) return;
         state.editor.setState(window.createSdPromptLabEditorState({doc: ''}));
-        configureEditorScrollBox();
-        measureEditorSoon();
+        setEditorVisible(false);
     }
 
     function measureEditorSoon() {
@@ -533,6 +544,7 @@ const sdPromptLabWildcardEditor = (() => {
             path,
             content: data.content || '',
             savedContent: data.content || '',
+            modified: data.modified ?? null,
             dirty: false
         });
         activateFile(path);
@@ -554,6 +566,7 @@ const sdPromptLabWildcardEditor = (() => {
         state.activePath = path;
         if (!file.editorState) file.editorState = createFileState(file);
         state.editor.setState(file.editorState);
+        setEditorVisible(true);
         configureEditorScrollBox();
         requestAnimationFrame(() => {
             if (activeFile() !== file || !state.editor) return;
@@ -566,6 +579,7 @@ const sdPromptLabWildcardEditor = (() => {
         updateHeader();
         validateActiveFile();
         state.editor.focus();
+        checkDiskVersion(file);
     }
 
     async function closeFile(path) {
@@ -617,6 +631,8 @@ const sdPromptLabWildcardEditor = (() => {
     }
 
     function scheduleAutosave(file) {
+        // While a disk conflict is unresolved, autosave must not keep retrying.
+        if (file.conflict) return;
         clearTimeout(file.autosaveTimer);
         file.autosaveTimer = setTimeout(() => saveFile(file, true), 900);
     }
@@ -626,29 +642,116 @@ const sdPromptLabWildcardEditor = (() => {
         if (file.autosaveTimer) saveFile(file, true);
     }
 
-    async function saveFile(file, isAuto = false) {
+    const sameModified = (a, b) => a != null && b != null && Math.abs(a - b) <= 0.001;
+
+    async function saveFile(file, isAuto = false, {force = false} = {}) {
         if (!file) return;
         clearTimeout(file.autosaveTimer);
         file.autosaveTimer = null;
         if (file === activeFile() && state.editor) file.content = state.editor.state.doc.toString();
-        if (!file.dirty && file.content === file.savedContent) return;
+        if (!force && !file.dirty && file.content === file.savedContent) return;
 
         const content = file.content;
+        const body = {path: file.path, content};
+        // Lets the server refuse the save if the file changed on disk since we read it.
+        if (!force && file.modified != null) body.expected_modified = file.modified;
+
+        file.saving = true;
         try {
             setStatus(isAuto ? `Autosaving ${file.path}...` : `Saving ${file.path}...`);
-            await requestJson('/sd-prompt-lab/wildcards/save', {
+            const data = await requestJson('/sd-prompt-lab/wildcards/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({path: file.path, content})
+                body: JSON.stringify(body)
             });
             file.savedContent = content;
+            file.modified = data.modified ?? file.modified;
+            file.conflict = false;
             // Edits made while the request was in flight keep the file dirty.
             file.dirty = file.content !== file.savedContent;
             updateTabs();
             updateHeader();
             setStatus(isAuto ? `Autosaved ${file.path}` : `Saved ${file.path}`, 'ok');
         } catch (error) {
+            if (error.status === 409) {
+                file.saving = false;
+                await resolveDiskConflict(file);
+                return;
+            }
             setStatus(error.message, 'error');
+        } finally {
+            file.saving = false;
+        }
+    }
+
+    // The file was modified outside the editor while it has unsaved changes here.
+    async function resolveDiskConflict(file) {
+        file.conflict = true;
+        setStatus(`${file.path} changed on disk`, 'error');
+        if (file.conflictDialogOpen) return;
+
+        file.conflictDialogOpen = true;
+        const choice = await window.spl.confirm({
+            title: 'File changed on disk',
+            message: `"${file.path}" was modified outside the editor. Overwrite it with your version, or reload it and lose your changes here?`,
+            confirmLabel: 'Overwrite',
+            extraLabel: 'Reload from disk',
+            cancelLabel: 'Cancel',
+            danger: true,
+        });
+        file.conflictDialogOpen = false;
+        if (!state.files.has(file.path)) return;   // closed or deleted meanwhile
+
+        try {
+            if (choice === true) await saveFile(file, false, {force: true});
+            else if (choice === 'extra') await reloadFile(file);
+        } catch (error) {
+            setStatus(error.message, 'error');
+        }
+    }
+
+    function applyDiskContent(file, data) {
+        clearTimeout(file.autosaveTimer);
+        file.autosaveTimer = null;
+        file.content = data.content || '';
+        file.savedContent = file.content;
+        file.modified = data.modified ?? null;
+        file.dirty = false;
+        file.conflict = false;
+        file.editorState = createFileState(file);
+        if (activeFile() === file && state.editor) {
+            state.editor.setState(file.editorState);
+            configureEditorScrollBox();
+            measureEditorSoon();
+        }
+        updateTabs();
+        updateHeader();
+    }
+
+    async function reloadFile(file) {
+        const data = await requestJson(`/sd-prompt-lab/wildcards/content?path=${encodeURIComponent(file.path)}`);
+        applyDiskContent(file, data);
+        setStatus(`Reloaded ${file.path} from disk`, 'ok');
+    }
+
+    // Called when a tab is activated or the window regains focus: pick up changes made
+    // by other programs. A clean file is reloaded quietly; a dirty one asks.
+    async function checkDiskVersion(file) {
+        if (!file || file.saving || file.checking || file.conflictDialogOpen || file.modified == null) return;
+        file.checking = true;
+        try {
+            const data = await requestJson(`/sd-prompt-lab/wildcards/content?path=${encodeURIComponent(file.path)}`);
+            if (file.saving || !state.files.has(file.path) || sameModified(data.modified, file.modified)) return;
+            if (file.dirty) {
+                await resolveDiskConflict(file);
+            } else {
+                applyDiskContent(file, data);
+                setStatus(`Reloaded ${file.path} (changed on disk)`, 'ok');
+            }
+        } catch (error) {
+            // Deleted or unreadable: leave the tab as it is; saving will report the problem.
+        } finally {
+            file.checking = false;
         }
     }
 
@@ -820,44 +923,28 @@ const sdPromptLabWildcardEditor = (() => {
 
     function validateActiveFile() {
         if (!state.activePath || !state.editor) return;
-        const content = state.editor.state.doc.toString();
-        const weightedWildcard = /\{([^{}\n]*\d+(?:\.\d+)?::[^{}\n]*)\}/g;
-        let match;
-
-        while ((match = weightedWildcard.exec(content))) {
-            const parts = match[1].split('|').map(part => part.trim()).filter(Boolean);
-            if (!parts.length || !parts.every(part => /^-?\d+(?:\.\d+)?::/.test(part))) continue;
-
-            const sum = parts.reduce((total, part) => total + Number(part.split('::')[0]), 0);
-            if (Math.abs(sum - 1) > 0.001) {
-                setStatus(`Weighted wildcard sum is ${sum.toFixed(3)} in ${match[0]}`, 'warn');
-                return;
-            }
-        }
-
         const file = state.files.get(state.activePath);
         if (file?.dirty) setStatus('Unsaved changes', 'warn');
     }
 
+    // Ctrl/Cmd-click on a __wildcard__ reference opens the file it points to.
     async function handleEditorLinkClick(event) {
         if (!state.editor || !(event.metaKey || event.ctrlKey)) return;
         const pos = state.editor.posAtCoords({x: event.clientX, y: event.clientY});
         if (pos == null) return;
 
-        const doc = state.editor.state.doc.toString();
-        const linkRegex = /__([^_\n]+?)__/g;
-        let match;
-        while ((match = linkRegex.exec(doc))) {
-            if (pos >= match.index && pos <= match.index + match[0].length) {
-                event.preventDefault();
-                const linkedPath = ensureTxtPath(match[1]);
-                try {
-                    await openFile(linkedPath);
-                } catch (error) {
-                    setStatus(`Linked wildcard not found: ${linkedPath}`, 'error');
-                }
-                return;
-            }
+        const link = window.sdPromptLabWildcardAt(state.editor, pos);
+        if (!link) return;
+        event.preventDefault();
+        if (/[*?]/.test(link.path)) {
+            setStatus(`"${link.path}" is a pattern that can match several files`, 'warn');
+            return;
+        }
+        const linkedPath = ensureTxtPath(link.path);
+        try {
+            await openFile(linkedPath);
+        } catch (error) {
+            setStatus(`Linked wildcard not found: ${linkedPath}`, 'error');
         }
     }
 
@@ -886,6 +973,8 @@ const sdPromptLabWildcardEditor = (() => {
                 setStatus('Failed to copy wildcard link', 'error');
             }
         });
+
+        window.addEventListener('focus', () => checkDiskVersion(activeFile()));
 
         getEl(ids.root)?.addEventListener('keydown', event => {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {

@@ -175,11 +175,14 @@
 
     // ---- confirm dialog ----------------------------------------------------------
 
+    // Resolves true (confirmed), false (cancelled / Escape) or 'extra' (the optional
+    // third button, when `extraLabel` is given).
     function confirmDialog({
         title = 'Are you sure?',
         message = '',
         confirmLabel = 'OK',
         cancelLabel = 'Cancel',
+        extraLabel = '',
         danger = false,
     } = {}) {
         return new Promise((resolve) => {
@@ -195,6 +198,7 @@
                     ${message ? `<div class="spl-confirm-message">${escapeHtml(message)}</div>` : ''}
                     <div class="spl-confirm-actions">
                         <button type="button" class="spl-confirm-btn" data-result="cancel">${escapeHtml(cancelLabel)}</button>
+                        ${extraLabel ? `<button type="button" class="spl-confirm-btn" data-result="extra">${escapeHtml(extraLabel)}</button>` : ''}
                         <button type="button" class="spl-confirm-btn ${danger ? 'is-danger' : 'is-primary'}" data-result="confirm">${escapeHtml(confirmLabel)}</button>
                     </div>
                 </div>`;
@@ -219,7 +223,7 @@
                     return;
                 }
                 const result = event.target.closest('[data-result]')?.dataset.result;
-                if (result) finish(result === 'confirm');
+                if (result) finish(result === 'extra' ? 'extra' : result === 'confirm');
             });
             document.addEventListener('keydown', onKeyDown, true);
             document.body.appendChild(backdrop);

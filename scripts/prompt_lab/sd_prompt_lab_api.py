@@ -1,6 +1,7 @@
 import mimetypes
 import os
 import shutil
+import tempfile
 import threading
 
 import requests
@@ -37,6 +38,8 @@ class PromptData(BaseModel):
 class WildcardSaveRequest(BaseModel):
     path: str
     content: str
+    # mtime the editor last saw; when given and the file changed since, the save is refused.
+    expected_modified: float | None = None
 
 
 class WildcardRenameRequest(BaseModel):
@@ -120,6 +123,37 @@ def _build_wildcards_editor_tree(directory, base=""):
     return result
 
 
+# Remote prompt images: only real images, and not unbounded downloads.
+_MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _download_remote_image(url: str, pics_dir: str) -> str:
+    """Download an image URL to a unique temp file inside pics_dir and return its path."""
+    os.makedirs(pics_dir, exist_ok=True)
+    with requests.get(url, timeout=10, stream=True) as response:
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if not content_type.startswith("image/"):
+            raise ValueError(f"URL did not return an image (Content-Type: {content_type or 'unknown'})")
+        ext = mimetypes.guess_extension(content_type) or ".jpg"
+        if ext not in utils.VALID_IMAGE_EXTENSIONS:
+            ext = ".jpg" if content_type == "image/jpeg" else ext
+        with tempfile.NamedTemporaryFile(dir=pics_dir, prefix="download-", suffix=ext, delete=False) as f:
+            temp_path = f.name
+            size = 0
+            try:
+                for chunk in response.iter_content(chunk_size=1 << 16):
+                    size += len(chunk)
+                    if size > _MAX_REMOTE_IMAGE_BYTES:
+                        raise ValueError("Image is larger than 20 MB")
+                    f.write(chunk)
+            except Exception:
+                f.close()
+                os.remove(temp_path)
+                raise
+    return temp_path
+
+
 # Static files the browser loads; their mtimes become cache-busting versions (?v=<mtime>).
 _ASSET_DIRS = ("javascript", "javascript/lib", "javascript/fonts", "editor", "editor/dict")
 _ASSET_EXTS = (".js", ".css", ".txt", ".woff2")
@@ -183,21 +217,15 @@ def init_api(app: FastAPI):
                 is_remote = image_path.startswith("http://") or image_path.startswith("https://")
 
                 if is_remote:
-                    # Try to download the image
+                    temp_path = None
                     try:
-                        response = requests.get(image_path, timeout=10)
-                        response.raise_for_status()
-                        ext = mimetypes.guess_extension(response.headers.get("Content-Type", "image/jpeg")) or ".jpg"
-
-                        temp_path = os.path.join(env.script_dir, "pics", f"tmp{ext}")
-                        with open(temp_path, "wb") as f:
-                            f.write(response.content)
-
+                        temp_path = _download_remote_image(image_path, os.path.join(env.script_dir, "pics"))
                         thumbnail_path = utils.create_thumbnail(temp_path, prompt_id)
-
-                        os.remove(temp_path)
                     except Exception as e:
                         raise HTTPException(status_code=400, detail=f"Failed to download or process image: {str(e)}")
+                    finally:
+                        if temp_path and os.path.exists(temp_path):
+                            os.remove(temp_path)
                 else:
                     thumbnail_path = utils.create_thumbnail(image_path, prompt_id)
 
@@ -217,15 +245,19 @@ def init_api(app: FastAPI):
             if not prompt:
                 raise HTTPException(status_code=404, detail="Prompt not found")
 
+            # Card URLs carry ?v=<mtime>; no-cache makes a replaced image show up right away.
+            no_cache = {"Cache-Control": "no-cache"}
             image_path = prompt.get("image_path")
             if not image_path or not os.path.isfile(image_path):
                 no_image_path = os.path.join(env.script_dir, "no_image_placeholder.png")
                 if no_image_path and os.path.isfile(no_image_path):
-                    return FileResponse(no_image_path, media_type="image/png")
+                    return FileResponse(no_image_path, media_type="image/png", headers=no_cache)
                 else:
                     raise HTTPException(status_code=404, detail="Thumbnail not found")
 
-            return FileResponse(image_path, media_type="image/png")
+            return FileResponse(image_path, media_type="image/png", headers=no_cache)
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -233,6 +265,12 @@ def init_api(app: FastAPI):
     async def get_all_prompts(search: str = None):
         try:
             prompts = db.get_all_prompts(search)
+            for prompt in prompts:
+                # Changes whenever the thumbnail file is replaced (cache-busting for cards).
+                try:
+                    prompt["image_version"] = int(os.path.getmtime(prompt["image_path"]))
+                except (OSError, TypeError):
+                    prompt["image_version"] = None
             return {"prompts": prompts}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -251,6 +289,8 @@ def init_api(app: FastAPI):
                 os.remove(thumb_path)
 
             return {"status": "ok", "id": prompt_id}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -474,6 +514,8 @@ def init_api(app: FastAPI):
             if not prompt:
                 raise HTTPException(status_code=404, detail="Prompt not found")
             return {"status": "ok", "prompt": prompt}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -509,7 +551,7 @@ def init_api(app: FastAPI):
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            return {"content": content}
+            return {"content": content, "modified": os.path.getmtime(abs_path)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -519,10 +561,15 @@ def init_api(app: FastAPI):
         if not os.path.isfile(abs_path):
             raise HTTPException(status_code=404, detail="File does not exist")
 
+        # Refuse to overwrite a file that changed on disk since the editor read it.
+        current = os.path.getmtime(abs_path)
+        if data.expected_modified is not None and abs(current - data.expected_modified) > 0.001:
+            raise HTTPException(status_code=409, detail="File changed on disk")
+
         try:
             with open(abs_path, "w", encoding="utf-8") as f:
                 f.write(data.content)
-            return {"status": "ok"}
+            return {"status": "ok", "modified": os.path.getmtime(abs_path)}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

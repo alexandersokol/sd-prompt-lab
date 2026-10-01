@@ -85,9 +85,13 @@ function switchToCreateTab() {
     window.spl.openTab('sd-prompt-lab-create-tab');
 }
 
+let loadCardsSeq = 0;
+
 const loadCards = async () => {
     const search = getSearchInputText();
     const cardsContainer = gradioApp().getElementById('sd-prompt-lab-cards-output');
+    // Responses can arrive out of order while typing; only the latest request may render.
+    const seq = ++loadCardsSeq;
 
     try {
         const url = search
@@ -96,6 +100,7 @@ const loadCards = async () => {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Failed to load prompts');
         const data = await response.json();
+        if (seq !== loadCardsSeq) return;
 
         loadedPrompts.clear();
         data.prompts.forEach(p => loadedPrompts.set(String(p.id), p));
@@ -108,7 +113,7 @@ const loadCards = async () => {
             ">`;
 
         data.prompts.forEach(p => {
-            const thumbnail = p.image_path ? `/sd-prompt-lab/thumbnail/${p.id}` : '';
+            const thumbnail = p.image_path ? `/sd-prompt-lab/thumbnail/${p.id}?v=${p.image_version || 0}` : '';
             const favoriteIcon = p.is_favorite ? '❤️' : '🩶';
 
             html += `
@@ -222,6 +227,7 @@ const loadCards = async () => {
         cardsContainer.innerHTML = html;
 
     } catch (e) {
+        if (seq !== loadCardsSeq) return;
         cardsContainer.innerHTML = `<div style="color: red;">${escapeHtml(e.message)}</div>`;
     }
 };
@@ -234,9 +240,10 @@ function setupBrowseTab() {
     const searchInput = gradioApp().getElementById('sd-prompt-lab-search-input');
     if (searchInput) {
         const textarea = searchInput.querySelector('textarea');
-        textarea.addEventListener('input', (e) => {
-            const value = e.target.value.trim();
-            loadCards(value);
+        let searchTimer = null;
+        textarea.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(loadCards, 250);
         });
     }
 
@@ -461,7 +468,8 @@ function applyPromptFormat(kind, doneMessage) {
         window.spl.toast('Nothing to change');
         return;
     }
-    editor.dispatch({changes: {from: 0, to: current.length, insert: next}});
+    // Its own user event keeps this change a separate undo step from surrounding edits.
+    editor.dispatch({changes: {from: 0, to: current.length, insert: next}, userEvent: 'format'});
     window.spl.toast(doneMessage);
 }
 
