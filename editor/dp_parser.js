@@ -533,7 +533,7 @@ export function extractWords(text, ranges) {
         re.lastIndex = 0;
         while ((m = re.exec(chunk)) !== null) {
             let word = m[0].replace(/'s$/i, '');
-            if (word.length < 3) continue;
+            if (word.length < 3 || word.includes("'")) continue;   // skip contractions
             if (word === word.toUpperCase()) continue;   // acronyms, BREAK, AND
             words.push({from: range.from + m.index, to: range.from + m.index + word.length, text: word});
         }

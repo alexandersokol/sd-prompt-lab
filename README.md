@@ -14,7 +14,11 @@
 
 - **Prompt Management**: Save, edit, and organize your prompts within the extension for easy access and reuse.
 
-- **Wildcards Integration**: Navigate and manage your wildcards seamlessly within the extension. *Note*: This feature requires the [Dynamic Prompts](https://github.com/adieyal/sd-dynamic-prompts) extension to be installed and enabled, and wildcards files added.
+- **Dynamic Prompts aware editor**: Highlights [Dynamic Prompts](https://github.com/adieyal/sd-dynamic-prompts) syntax (variants, wildcards, variables) and underlines mistakes: unbalanced brackets, malformed or missing wildcards, a stray `|`, misplaced variable definitions and misspelled words.
+
+- **Wildcard Editor**: Browse, search (by name or file content) and edit your wildcard files in a tabbed editor. *Note*: This feature requires the [Dynamic Prompts](https://github.com/adieyal/sd-dynamic-prompts) extension to be installed, and wildcards files added.
+
+- **Settings**: Manage the saved autocompletion prompts and switch spell checking on or off.
 
 - **Image Handling in 'Create' Tab**:
   - **Local Images**: Browse and select images from your local storage.

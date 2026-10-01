@@ -638,6 +638,9 @@
             state.editor = window.createSdPromptLabWildcardEditor({
                 parent: host,
                 doc: text || '',
+                // One prompt per card; spelling is not checked here.
+                mode: 'prompt',
+                spellCheck: false,
                 onChange: (doc) => {
                     if (state.silentChange) return;
                     const card = activeCard();

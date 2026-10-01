@@ -1,7 +1,7 @@
 # Editor Language Engine — Design Spec (B)
 
 **Date:** 2026-10-01
-**Status:** Approved (design), pending implementation plan
+**Status:** Implemented. The "As built" section at the end lists where the implementation differs from this design.
 **Companion spec:** `2026-10-01-tabs-and-plumbing-design.md` (A). A ships first; B
 relies on A's settings store and per-file editor states.
 
@@ -186,3 +186,35 @@ Added to `editor/style.css`: `.spl-tok-*` colours (reusing the current palette),
 
 Spelling suggestions/quick-fixes, auto-fix actions for diagnostics, YAML/JSON wildcard
 files, and migrating existing autocompletion words.
+
+## As built
+
+Verified against the real parser: `dynamicprompts` was installed in a scratch environment
+and the new parser's verdicts were compared with it on 145 cases (0 mismatches for the
+checks that correspond to a dynamic prompts parse failure).
+
+Differences from the design above:
+
+- **Severity.** `weight-malformed` (`{x::a}`) and an inverted range (`{3-1$$a|b}`, code
+  `bound-range`) are warnings, not errors: the real parser accepts both.
+- **New warnings `stray-dollar` / `stray-percent`.** A lone `$`, `$$` or `%` outside the
+  syntax (e.g. `50% off`) makes the real parser fail, so it is flagged.
+- **Codes.** `wildcard-empty` (`____`) and `pipe-in-variable` (`${x=a|b}`) are separate
+  codes. `wildcard-char` covers `#`, `}`, `$`, `%` and an unclosed `(` in a path; spaces and
+  commas in a path are legal and only surface through the missing-file warning.
+- **Escapes.** `\(`, `\)`, `\[`, `\]` are literal (A1111). `\{` is not an escape, matching
+  dynamic prompts.
+- **Wildcards are single-line** in the editor (the real parser lets a path span lines).
+- **Wildcard resolver** uses a new `GET /sd-prompt-lab/wildcards/names` (all `.txt` names
+  plus key paths of YAML/JSON collections) instead of the editor tree. If a collection
+  cannot be read, the missing-file check is switched off rather than risk false warnings.
+- **Spell check server lookup** queries the existing tag cache directly (a word is known
+  if it is a tag or the first word of a tag) and the saved autocompletion prompts. No
+  `tag_words` table, so the tag cache needs no rebuild. Contractions and ALL-CAPS words
+  are skipped.
+- **English word list** is ENABLE (public domain, 172k words) plus
+  `editor/dict/extra-words.txt` for prompt jargon; both are plain files you can edit.
+- **Extras.** Multi-line `{}` blocks can be folded from the gutter; auto-closing is limited
+  to brackets (no quote pairing); F8 / Shift-F8 jump between diagnostics.
+- **Not done.** The ~5,000-character responsiveness check from the Testing section was not
+  measured.

@@ -14759,7 +14759,7 @@
       if (isNaN(current) || Math.abs(value - current) > 1)
           elt.style.left = value + "px";
   }
-  const baseTheme$3 = /*@__PURE__*/EditorView.baseTheme({
+  const baseTheme$4 = /*@__PURE__*/EditorView.baseTheme({
       ".cm-tooltip": {
           zIndex: 500,
           boxSizing: "border-box"
@@ -14826,8 +14826,334 @@
   Facet to which an extension can add a value to show a tooltip.
   */
   const showTooltip = /*@__PURE__*/Facet.define({
-      enables: [tooltipPlugin, baseTheme$3]
+      enables: [tooltipPlugin, baseTheme$4]
   });
+  const showHoverTooltip = /*@__PURE__*/Facet.define({
+      combine: inputs => inputs.reduce((a, i) => a.concat(i), [])
+  });
+  class HoverTooltipHost {
+      // Needs to be static so that host tooltip instances always match
+      static create(view) {
+          return new HoverTooltipHost(view);
+      }
+      constructor(view) {
+          this.view = view;
+          this.mounted = false;
+          this.dom = document.createElement("div");
+          this.dom.classList.add("cm-tooltip-hover");
+          this.manager = new TooltipViewManager(view, showHoverTooltip, (t, p) => this.createHostedView(t, p), t => t.dom.remove());
+      }
+      createHostedView(tooltip, prev) {
+          let hostedView = tooltip.create(this.view);
+          hostedView.dom.classList.add("cm-tooltip-section");
+          this.dom.insertBefore(hostedView.dom, prev ? prev.dom.nextSibling : this.dom.firstChild);
+          if (this.mounted && hostedView.mount)
+              hostedView.mount(this.view);
+          return hostedView;
+      }
+      mount(view) {
+          for (let hostedView of this.manager.tooltipViews) {
+              if (hostedView.mount)
+                  hostedView.mount(view);
+          }
+          this.mounted = true;
+      }
+      positioned(space) {
+          for (let hostedView of this.manager.tooltipViews) {
+              if (hostedView.positioned)
+                  hostedView.positioned(space);
+          }
+      }
+      update(update) {
+          this.manager.update(update);
+      }
+      destroy() {
+          var _a;
+          for (let t of this.manager.tooltipViews)
+              (_a = t.destroy) === null || _a === void 0 ? void 0 : _a.call(t);
+      }
+      passProp(name) {
+          let value = undefined;
+          for (let view of this.manager.tooltipViews) {
+              let given = view[name];
+              if (given !== undefined) {
+                  if (value === undefined)
+                      value = given;
+                  else if (value !== given)
+                      return undefined;
+              }
+          }
+          return value;
+      }
+      get offset() { return this.passProp("offset"); }
+      get getCoords() { return this.passProp("getCoords"); }
+      get overlap() { return this.passProp("overlap"); }
+      get resize() { return this.passProp("resize"); }
+  }
+  const showHoverTooltipHost = /*@__PURE__*/showTooltip.compute([showHoverTooltip], state => {
+      let tooltips = state.facet(showHoverTooltip);
+      if (tooltips.length === 0)
+          return null;
+      return {
+          pos: Math.min(...tooltips.map(t => t.pos)),
+          end: Math.max(...tooltips.map(t => { var _a; return (_a = t.end) !== null && _a !== void 0 ? _a : t.pos; })),
+          create: HoverTooltipHost.create,
+          above: tooltips[0].above,
+          arrow: tooltips.some(t => t.arrow),
+      };
+  });
+  const hoverPlugin = /*@__PURE__*/Facet.define();
+  class HoverPlugin {
+      constructor(view, source, field, locked, setHover, hoverTime) {
+          this.view = view;
+          this.source = source;
+          this.field = field;
+          this.locked = locked;
+          this.setHover = setHover;
+          this.hoverTime = hoverTime;
+          this.hoverTimeout = -1;
+          this.restartTimeout = -1;
+          this.pending = null;
+          this.lastMove = { x: 0, y: 0, target: view.dom, time: 0 };
+          this.checkHover = this.checkHover.bind(this);
+          view.dom.addEventListener("mouseleave", this.mouseleave = this.mouseleave.bind(this));
+          view.dom.addEventListener("mousemove", this.mousemove = this.mousemove.bind(this));
+      }
+      update(update) {
+          if (this.pending) {
+              this.pending = null;
+              clearTimeout(this.restartTimeout);
+              this.restartTimeout = setTimeout(() => this.startHover(), 20);
+          }
+      }
+      get active() {
+          return this.view.state.field(this.field);
+      }
+      checkHover() {
+          this.hoverTimeout = -1;
+          if (this.active.length)
+              return;
+          let hovered = Date.now() - this.lastMove.time;
+          if (hovered < this.hoverTime)
+              this.hoverTimeout = setTimeout(this.checkHover, this.hoverTime - hovered);
+          else
+              this.startHover();
+      }
+      startHover() {
+          clearTimeout(this.restartTimeout);
+          let { view, lastMove } = this;
+          let tile = view.docView.tile.nearest(lastMove.target);
+          if (!tile)
+              return;
+          let pos, side = 1;
+          if (tile.isWidget()) {
+              pos = tile.posAtStart;
+          }
+          else {
+              pos = view.posAtCoords(lastMove);
+              if (pos == null)
+                  return;
+              let posCoords = view.coordsAtPos(pos);
+              if (!posCoords ||
+                  lastMove.y < posCoords.top || lastMove.y > posCoords.bottom ||
+                  lastMove.x < posCoords.left - view.defaultCharacterWidth ||
+                  lastMove.x > posCoords.right + view.defaultCharacterWidth)
+                  return;
+              let bidi = view.bidiSpans(view.state.doc.lineAt(pos)).find(s => s.from <= pos && s.to >= pos);
+              let rtl = bidi && bidi.dir == Direction.RTL ? -1 : 1;
+              side = (lastMove.x < posCoords.left ? -rtl : rtl);
+          }
+          this.activateHover(view, pos, side);
+      }
+      activateHover(view, pos, side, locked) {
+          let open = this.source(view, pos, side);
+          let done = (value) => {
+              if (value && !(Array.isArray(value) && !value.length)) {
+                  let tooltips = Array.isArray(value) ? value : [value];
+                  if (locked)
+                      this.locked.set(tooltips, locked);
+                  view.dispatch({ effects: this.setHover.of(tooltips) });
+              }
+          };
+          if (open && "then" in open) {
+              let pending = this.pending = { pos };
+              open.then(result => {
+                  if (this.pending == pending) {
+                      this.pending = null;
+                      done(result);
+                  }
+              }, e => logException(view.state, e, "hover tooltip"));
+          }
+          else {
+              done(open);
+          }
+      }
+      get tooltip() {
+          let plugin = this.view.plugin(tooltipPlugin);
+          let index = plugin ? plugin.manager.tooltips.findIndex(t => t.create == HoverTooltipHost.create) : -1;
+          return index > -1 ? plugin.manager.tooltipViews[index] : null;
+      }
+      mousemove(event) {
+          var _a, _b;
+          this.lastMove = { x: event.clientX, y: event.clientY, target: event.target, time: Date.now() };
+          if (this.hoverTimeout < 0)
+              this.hoverTimeout = setTimeout(this.checkHover, this.hoverTime);
+          let { active, tooltip } = this;
+          if (active.length && !this.locked.has(active) && tooltip && !isInTooltip(tooltip.dom, event) || this.pending) {
+              let { pos } = active[0] || this.pending, end = (_b = (_a = active[0]) === null || _a === void 0 ? void 0 : _a.end) !== null && _b !== void 0 ? _b : pos;
+              if ((pos == end ? this.view.posAtCoords(this.lastMove) != pos
+                  : !isOverRange(this.view, pos, end, event.clientX, event.clientY))) {
+                  this.view.dispatch({ effects: this.setHover.of([]) });
+                  this.pending = null;
+              }
+          }
+      }
+      mouseleave(event) {
+          clearTimeout(this.hoverTimeout);
+          this.hoverTimeout = -1;
+          let { active } = this;
+          if (active.length && !this.locked.has(active)) {
+              let { tooltip } = this;
+              let inTooltip = tooltip && tooltip.dom.contains(event.relatedTarget);
+              if (!inTooltip)
+                  this.view.dispatch({ effects: this.setHover.of([]) });
+              else
+                  this.watchTooltipLeave(tooltip.dom);
+          }
+      }
+      watchTooltipLeave(tooltip) {
+          let watch = (event) => {
+              tooltip.removeEventListener("mouseleave", watch);
+              let { active } = this;
+              if (active.length && !this.locked.has(active) && !this.view.dom.contains(event.relatedTarget))
+                  this.view.dispatch({ effects: this.setHover.of([]) });
+          };
+          tooltip.addEventListener("mouseleave", watch);
+      }
+      destroy() {
+          clearTimeout(this.hoverTimeout);
+          clearTimeout(this.restartTimeout);
+          this.view.dom.removeEventListener("mouseleave", this.mouseleave);
+          this.view.dom.removeEventListener("mousemove", this.mousemove);
+      }
+  }
+  const tooltipMargin = 4;
+  function isInTooltip(tooltip, event) {
+      let { left, right, top, bottom } = tooltip.getBoundingClientRect(), arrow;
+      if (arrow = tooltip.querySelector(".cm-tooltip-arrow")) {
+          let arrowRect = arrow.getBoundingClientRect();
+          top = Math.min(arrowRect.top, top);
+          bottom = Math.max(arrowRect.bottom, bottom);
+      }
+      return event.clientX >= left - tooltipMargin && event.clientX <= right + tooltipMargin &&
+          event.clientY >= top - tooltipMargin && event.clientY <= bottom + tooltipMargin;
+  }
+  function isOverRange(view, from, to, x, y, margin) {
+      let rect = view.scrollDOM.getBoundingClientRect();
+      let docBottom = view.documentTop + view.documentPadding.top + view.contentHeight;
+      if (rect.left > x || rect.right < x || rect.top > y || Math.min(rect.bottom, docBottom) < y)
+          return false;
+      let pos = view.posAtCoords({ x, y }, false);
+      return pos >= from && pos <= to;
+  }
+  /**
+  Set up a hover tooltip, which shows up when the pointer hovers
+  over ranges of text. The callback is called when the mouse hovers
+  over the document text. It should, if there is a tooltip
+  associated with position `pos`, return the tooltip description
+  (either directly or in a promise). The `side` argument indicates
+  on which side of the position the pointer is—it will be -1 if the
+  pointer is before the position, 1 if after the position.
+
+  Note that all hover tooltips are hosted within a single tooltip
+  container element. This allows multiple tooltips over the same
+  range to be "merged" together without overlapping.
+
+  The return value is a valid [editor extension](https://codemirror.net/6/docs/ref/#state.Extension)
+  but also provides an `active` property holding a state field that
+  can be used to read the currently active tooltips produced by this
+  extension.
+  */
+  function hoverTooltip(source, options = {}) {
+      let setHover = StateEffect.define();
+      // This would be better stored in the state field, but we've set
+      // down the type of the field in our interface, so it's indirectly
+      // stored by array identity.
+      let locked = new WeakMap();
+      let hoverState = StateField.define({
+          create() { return []; },
+          update(value, tr) {
+              let lock = locked.get(value);
+              if (value.length) {
+                  if (options.hideOnChange && (tr.docChanged || tr.selection))
+                      value = [];
+                  else if (lock && lock(tr))
+                      value = [];
+                  else if (options.hideOn)
+                      value = value.filter(v => !options.hideOn(tr, v));
+              }
+              if (tr.docChanged && value.length) {
+                  let mapped = [];
+                  for (let tooltip of value) {
+                      let newPos = tr.changes.mapPos(tooltip.pos, -1, MapMode.TrackDel);
+                      if (newPos != null) {
+                          let copy = Object.assign(Object.create(null), tooltip);
+                          copy.pos = newPos;
+                          if (copy.end != null)
+                              copy.end = tr.changes.mapPos(copy.end);
+                          mapped.push(copy);
+                      }
+                  }
+                  value = mapped;
+              }
+              for (let effect of tr.effects) {
+                  if (effect.is(setHover)) {
+                      value = effect.value;
+                      lock = undefined;
+                  }
+                  if (effect.is(closeHoverTooltipEffect) && !effect.value || effect.value == hoverState)
+                      value = [];
+              }
+              if (value.length && lock)
+                  locked.set(value, lock);
+              return value;
+          },
+          provide: f => showHoverTooltip.from(f)
+      });
+      const plugin = ViewPlugin.define(view => new HoverPlugin(view, source, hoverState, locked, setHover, options.hoverTime || 300 /* Hover.Time */));
+      return {
+          active: hoverState,
+          extension: [
+              hoverState,
+              plugin,
+              hoverPlugin.of(plugin),
+              showHoverTooltipHost
+          ]
+      };
+  }
+  /**
+  Activate hover tooltips for the given position and side. If you
+  provide a specific hover tooltip (the value returned from
+  [`hoverTooltip`](https://codemirror.net/6/docs/ref/#view.hoverTooltip)), only that one will be
+  activated. If not given, all hover tooltips at the given position
+  are triggered.
+
+  Note that tooltips opened this way don't close automatically, and
+  you'll want to pass an `until` callback or use
+  [`closeHoverTooltip`](https://codemirror.net/6/docs/ref/#view.closeHoverTooltip)/[`closeHoverTooltips`](https://codemirror.net/6/docs/ref/#view.closeHoverTooltips)
+  to deactivate them.
+  */
+  function activateHover(view, pos, side, options = {}) {
+      var _a;
+      let plugins = view.state.facet(hoverPlugin).map(p => view.plugin(p)).filter((p) => !!p);
+      if (options.tooltip && options.tooltip.active) {
+          let found = plugins.find(p => p.field == options.tooltip.active);
+          if (found)
+              plugins = [found];
+      }
+      for (let plugin of plugins)
+          plugin.activateHover(view, pos, side, (_a = options.until) !== null && _a !== void 0 ? _a : (() => false));
+  }
   /**
   Get the active tooltip view for a given tooltip, if available.
   */
@@ -14838,6 +15164,7 @@
       let found = plugin.manager.tooltips.indexOf(tooltip);
       return found < 0 ? null : plugin.manager.tooltipViews[found];
   }
+  const closeHoverTooltipEffect = /*@__PURE__*/StateEffect.define();
 
   const panelConfig = /*@__PURE__*/Facet.define({
       combine(configs) {
@@ -15908,55 +16235,6 @@
   An empty dummy node type to use when no actual type is available.
   */
   NodeType.none = new NodeType("", Object.create(null), 0, 8 /* NodeFlag.Anonymous */);
-  /**
-  A node set holds a collection of node types. It is used to
-  compactly represent trees by storing their type ids, rather than a
-  full pointer to the type object, in a numeric array. Each parser
-  [has](#lr.LRParser.nodeSet) a node set, and [tree
-  buffers](#common.TreeBuffer) can only store collections of nodes
-  from the same set. A set can have a maximum of 2**16 (65536) node
-  types in it, so that the ids fit into 16-bit typed array slots.
-  */
-  class NodeSet {
-      /**
-      Create a set with the given types. The `id` property of each
-      type should correspond to its position within the array.
-      */
-      constructor(
-      /**
-      The node types in this set, by id.
-      */
-      types) {
-          this.types = types;
-          for (let i = 0; i < types.length; i++)
-              if (types[i].id != i)
-                  throw new RangeError("Node type ids should correspond to array positions when creating a node set");
-      }
-      /**
-      Create a copy of this set with some node properties added. The
-      arguments to this method can be created with
-      [`NodeProp.add`](#common.NodeProp.add).
-      */
-      extend(...props) {
-          let newTypes = [];
-          for (let type of this.types) {
-              let newProps = null;
-              for (let source of props) {
-                  let add = source(type);
-                  if (add) {
-                      if (!newProps)
-                          newProps = Object.assign({}, type.props);
-                      let value = add[1], prop = add[0];
-                      if (prop.combine && prop.id in newProps)
-                          value = prop.combine(newProps[prop.id], value);
-                      newProps[prop.id] = value;
-                  }
-              }
-              newTypes.push(newProps ? new NodeType(type.name, newProps, type.id, type.flags) : type);
-          }
-          return new NodeSet(newTypes);
-      }
-  }
   const CachedNode = new WeakMap(), CachedInnerNode = new WeakMap();
   /**
   Options that control iteration. Can be combined with the `|`
@@ -18231,7 +18509,7 @@
   * [`definition`](#highlight.tags.definition)[`(propertyName)`](#highlight.tags.propertyName)
     to `"tok-propertyName tok-definition"`
   */
-  const classHighlighter = tagHighlighter([
+  tagHighlighter([
       { tag: tags.link, class: "tok-link" },
       { tag: tags.heading, class: "tok-heading" },
       { tag: tags.emphasis, class: "tok-emphasis" },
@@ -18270,19 +18548,6 @@
   facet that stores language-specific data for that language.
   */
   const languageDataProp = /*@__PURE__*/new NodeProp();
-  /**
-  Helper function to define a facet (to be added to the top syntax
-  node(s) for a language via
-  [`languageDataProp`](https://codemirror.net/6/docs/ref/#language.languageDataProp)), that will be
-  used to associate language data with the language. You
-  probably only need this when subclassing
-  [`Language`](https://codemirror.net/6/docs/ref/#language.Language).
-  */
-  function defineLanguageFacet(baseData) {
-      return Facet.define({
-          combine: baseData ? values => values.concat(baseData) : undefined
-      });
-  }
   /**
   Syntax node prop used to register sublanguages. Should be added to
   the top level node type for the language.
@@ -19167,50 +19432,6 @@
           return closed ? context.column(aligned.from) : context.column(aligned.to);
       return context.baseIndent + (closed ? 0 : context.unit * units);
   }
-  const DontIndentBeyond = 200;
-  /**
-  Enables reindentation on input. When a language defines an
-  `indentOnInput` field in its [language
-  data](https://codemirror.net/6/docs/ref/#state.EditorState.languageDataAt), which must hold a regular
-  expression, the line at the cursor will be reindented whenever new
-  text is typed and the input from the start of the line up to the
-  cursor matches that regexp.
-
-  To avoid unneccesary reindents, it is recommended to start the
-  regexp with `^` (usually followed by `\s*`), and end it with `$`.
-  For example, `/^\s*\}$/` will reindent when a closing brace is
-  added at the start of a line.
-  */
-  function indentOnInput() {
-      return EditorState.transactionFilter.of(tr => {
-          if (!tr.docChanged || !tr.isUserEvent("input.type") && !tr.isUserEvent("input.complete"))
-              return tr;
-          let rules = tr.startState.languageDataAt("indentOnInput", tr.startState.selection.main.head);
-          if (!rules.length)
-              return tr;
-          let doc = tr.newDoc, { head } = tr.newSelection.main, line = doc.lineAt(head);
-          if (head > line.from + DontIndentBeyond)
-              return tr;
-          let lineStart = doc.sliceString(line.from, head);
-          if (!rules.some(r => r.test(lineStart)))
-              return tr;
-          let { state } = tr, last = -1, changes = [];
-          for (let { head } of state.selection.ranges) {
-              let line = state.doc.lineAt(head);
-              if (line.from == last)
-                  continue;
-              last = line.from;
-              let indent = getIndentation(state, line.from);
-              if (indent == null)
-                  continue;
-              let cur = /^\s*/.exec(line.text)[0];
-              let norm = indentString(state, indent);
-              if (cur != norm)
-                  changes.push({ from: line.from, to: line.from + cur.length, insert: norm });
-          }
-          return changes.length ? [tr, { changes, sequential: true }] : tr;
-      });
-  }
 
   /**
   A facet that registers a code folding service. When called with
@@ -19721,7 +19942,7 @@
       decorations: v => v.decorations
   }));
 
-  const baseTheme$2 = /*@__PURE__*/EditorView.baseTheme({
+  const baseTheme$3 = /*@__PURE__*/EditorView.baseTheme({
       "&.cm-focused .cm-matchingBracket": { backgroundColor: "#328c8252" },
       "&.cm-focused .cm-nonmatchingBracket": { backgroundColor: "#bb555544" }
   });
@@ -19783,7 +20004,7 @@
   });
   const bracketMatchingUnique = [
       bracketMatcher,
-      baseTheme$2
+      baseTheme$3
   ];
   /**
   Create an extension that enables bracket matching. Whenever the
@@ -19898,479 +20119,8 @@
       }
       return iter.done ? { start: startToken, matched: false } : null;
   }
-
-  // Counts the column offset in a string, taking tabs into account.
-  // Used mostly to find indentation.
-  function countCol(string, end, tabSize, startIndex = 0, startValue = 0) {
-      if (end == null) {
-          end = string.search(/[^\s\u00a0]/);
-          if (end == -1)
-              end = string.length;
-      }
-      let n = startValue;
-      for (let i = startIndex; i < end; i++) {
-          if (string.charCodeAt(i) == 9)
-              n += tabSize - (n % tabSize);
-          else
-              n++;
-      }
-      return n;
-  }
-  /**
-  Encapsulates a single line of input. Given to stream syntax code,
-  which uses it to tokenize the content.
-  */
-  class StringStream {
-      /**
-      Create a stream.
-      */
-      constructor(
-      /**
-      The line.
-      */
-      string, tabSize, 
-      /**
-      The current indent unit size.
-      */
-      indentUnit, overrideIndent) {
-          this.string = string;
-          this.tabSize = tabSize;
-          this.indentUnit = indentUnit;
-          this.overrideIndent = overrideIndent;
-          /**
-          The current position on the line.
-          */
-          this.pos = 0;
-          /**
-          The start position of the current token.
-          */
-          this.start = 0;
-          this.lastColumnPos = 0;
-          this.lastColumnValue = 0;
-      }
-      /**
-      True if we are at the end of the line.
-      */
-      eol() { return this.pos >= this.string.length; }
-      /**
-      True if we are at the start of the line.
-      */
-      sol() { return this.pos == 0; }
-      /**
-      Get the next code unit after the current position, or undefined
-      if we're at the end of the line.
-      */
-      peek() { return this.string.charAt(this.pos) || undefined; }
-      /**
-      Read the next code unit and advance `this.pos`.
-      */
-      next() {
-          if (this.pos < this.string.length)
-              return this.string.charAt(this.pos++);
-      }
-      /**
-      Match the next character against the given string, regular
-      expression, or predicate. Consume and return it if it matches.
-      */
-      eat(match) {
-          let ch = this.string.charAt(this.pos);
-          let ok;
-          if (typeof match == "string")
-              ok = ch == match;
-          else
-              ok = ch && (match instanceof RegExp ? match.test(ch) : match(ch));
-          if (ok) {
-              ++this.pos;
-              return ch;
-          }
-      }
-      /**
-      Continue matching characters that match the given string,
-      regular expression, or predicate function. Return true if any
-      characters were consumed.
-      */
-      eatWhile(match) {
-          let start = this.pos;
-          while (this.eat(match)) { }
-          return this.pos > start;
-      }
-      /**
-      Consume whitespace ahead of `this.pos`. Return true if any was
-      found.
-      */
-      eatSpace() {
-          let start = this.pos;
-          while (/[\s\u00a0]/.test(this.string.charAt(this.pos)))
-              ++this.pos;
-          return this.pos > start;
-      }
-      /**
-      Move to the end of the line.
-      */
-      skipToEnd() { this.pos = this.string.length; }
-      /**
-      Move to directly before the given character, if found on the
-      current line.
-      */
-      skipTo(ch) {
-          let found = this.string.indexOf(ch, this.pos);
-          if (found > -1) {
-              this.pos = found;
-              return true;
-          }
-      }
-      /**
-      Move back `n` characters.
-      */
-      backUp(n) { this.pos -= n; }
-      /**
-      Get the column position at `this.pos`.
-      */
-      column() {
-          if (this.lastColumnPos < this.start) {
-              this.lastColumnValue = countCol(this.string, this.start, this.tabSize, this.lastColumnPos, this.lastColumnValue);
-              this.lastColumnPos = this.start;
-          }
-          return this.lastColumnValue;
-      }
-      /**
-      Get the indentation column of the current line.
-      */
-      indentation() {
-          var _a;
-          return (_a = this.overrideIndent) !== null && _a !== void 0 ? _a : countCol(this.string, null, this.tabSize);
-      }
-      /**
-      Match the input against the given string or regular expression
-      (which should start with a `^`). Return true or the regexp match
-      if it matches.
-      
-      Unless `consume` is set to `false`, this will move `this.pos`
-      past the matched text.
-      
-      When matching a string `caseInsensitive` can be set to true to
-      make the match case-insensitive.
-      */
-      match(pattern, consume, caseInsensitive) {
-          if (typeof pattern == "string") {
-              let cased = (str) => caseInsensitive ? str.toLowerCase() : str;
-              let substr = this.string.substr(this.pos, pattern.length);
-              if (cased(substr) == cased(pattern)) {
-                  if (consume !== false)
-                      this.pos += pattern.length;
-                  return true;
-              }
-              else
-                  return null;
-          }
-          else {
-              let match = this.string.slice(this.pos).match(pattern);
-              if (match && match.index > 0)
-                  return null;
-              if (match && consume !== false)
-                  this.pos += match[0].length;
-              return match;
-          }
-      }
-      /**
-      Get the current token.
-      */
-      current() { return this.string.slice(this.start, this.pos); }
-  }
-
-  function fullParser(spec) {
-      return {
-          name: spec.name || "",
-          token: spec.token,
-          blankLine: spec.blankLine || (() => { }),
-          startState: spec.startState || (() => true),
-          copyState: spec.copyState || defaultCopyState,
-          indent: spec.indent || (() => null),
-          languageData: spec.languageData || {},
-          tokenTable: spec.tokenTable || noTokens,
-          mergeTokens: spec.mergeTokens !== false
-      };
-  }
-  function defaultCopyState(state) {
-      if (typeof state != "object")
-          return state;
-      let newState = {};
-      for (let prop in state) {
-          let val = state[prop];
-          newState[prop] = (val instanceof Array ? val.slice() : val);
-      }
-      return newState;
-  }
-  const IndentedFrom = /*@__PURE__*/new WeakMap();
-  /**
-  A [language](https://codemirror.net/6/docs/ref/#language.Language) class based on a CodeMirror
-  5-style [streaming parser](https://codemirror.net/6/docs/ref/#language.StreamParser).
-  */
-  class StreamLanguage extends Language {
-      constructor(parser) {
-          let data = defineLanguageFacet(parser.languageData);
-          let p = fullParser(parser), self;
-          let impl = new class extends Parser {
-              createParse(input, fragments, ranges) {
-                  return new Parse(self, input, fragments, ranges);
-              }
-          };
-          super(data, impl, [], parser.name);
-          this.topNode = docID(data, this);
-          self = this;
-          this.streamParser = p;
-          this.stateAfter = new NodeProp({ perNode: true });
-          this.tokenTable = parser.tokenTable ? new TokenTable(p.tokenTable) : defaultTokenTable;
-      }
-      /**
-      Define a stream language.
-      */
-      static define(spec) { return new StreamLanguage(spec); }
-      /**
-      @internal
-      */
-      getIndent(cx) {
-          let from = undefined;
-          let { overrideIndentation } = cx.options;
-          if (overrideIndentation) {
-              from = IndentedFrom.get(cx.state);
-              if (from != null && from < cx.pos - 1e4)
-                  from = undefined;
-          }
-          let start = findState(this, cx.node.tree, cx.node.from, cx.node.from, from !== null && from !== void 0 ? from : cx.pos), statePos, state;
-          if (start) {
-              state = start.state;
-              statePos = start.pos + 1;
-          }
-          else {
-              state = this.streamParser.startState(cx.unit);
-              statePos = cx.node.from;
-          }
-          if (cx.pos - statePos > 10000 /* C.MaxIndentScanDist */)
-              return null;
-          while (statePos < cx.pos) {
-              let line = cx.state.doc.lineAt(statePos), end = Math.min(cx.pos, line.to);
-              if (line.length) {
-                  let indentation = overrideIndentation ? overrideIndentation(line.from) : -1;
-                  let stream = new StringStream(line.text, cx.state.tabSize, cx.unit, indentation < 0 ? undefined : indentation);
-                  while (stream.pos < end - line.from)
-                      readToken(this.streamParser.token, stream, state);
-              }
-              else {
-                  this.streamParser.blankLine(state, cx.unit);
-              }
-              if (end == cx.pos)
-                  break;
-              statePos = line.to + 1;
-          }
-          let line = cx.lineAt(cx.pos);
-          if (overrideIndentation && from == null)
-              IndentedFrom.set(cx.state, line.from);
-          return this.streamParser.indent(state, /^\s*(.*)/.exec(line.text)[1], cx);
-      }
-      get allowsNesting() { return false; }
-  }
-  function findState(lang, tree, off, startPos, before) {
-      let state = off >= startPos && off + tree.length <= before && tree.prop(lang.stateAfter);
-      if (state)
-          return { state: lang.streamParser.copyState(state), pos: off + tree.length };
-      for (let i = tree.children.length - 1; i >= 0; i--) {
-          let child = tree.children[i], pos = off + tree.positions[i];
-          let found = child instanceof Tree && pos < before && findState(lang, child, pos, startPos, before);
-          if (found)
-              return found;
-      }
-      return null;
-  }
-  function cutTree(lang, tree, from, to, inside) {
-      if (inside && from <= 0 && to >= tree.length)
-          return tree;
-      if (!inside && from == 0 && tree.type == lang.topNode)
-          inside = true;
-      for (let i = tree.children.length - 1; i >= 0; i--) {
-          let pos = tree.positions[i], child = tree.children[i], inner;
-          if (pos < to && child instanceof Tree) {
-              if (!(inner = cutTree(lang, child, from - pos, to - pos, inside)))
-                  break;
-              return !inside ? inner
-                  : new Tree(tree.type, tree.children.slice(0, i).concat(inner), tree.positions.slice(0, i + 1), pos + inner.length);
-          }
-      }
-      return null;
-  }
-  function findStartInFragments(lang, fragments, startPos, endPos, editorState) {
-      for (let f of fragments) {
-          let from = f.from + (f.openStart ? 25 : 0), to = f.to - (f.openEnd ? 25 : 0);
-          let found = from <= startPos && to > startPos && findState(lang, f.tree, 0 - f.offset, startPos, to), tree;
-          if (found && found.pos <= endPos && (tree = cutTree(lang, f.tree, startPos + f.offset, found.pos + f.offset, false)))
-              return { state: found.state, tree };
-      }
-      return { state: lang.streamParser.startState(editorState ? getIndentUnit(editorState) : 4), tree: Tree.empty };
-  }
-  class Parse {
-      constructor(lang, input, fragments, ranges) {
-          this.lang = lang;
-          this.input = input;
-          this.fragments = fragments;
-          this.ranges = ranges;
-          this.stoppedAt = null;
-          this.chunks = [];
-          this.chunkPos = [];
-          this.chunk = [];
-          this.chunkReused = undefined;
-          this.rangeIndex = 0;
-          this.to = ranges[ranges.length - 1].to;
-          let context = ParseContext.get(), from = ranges[0].from;
-          let { state, tree } = findStartInFragments(lang, fragments, from, this.to, context === null || context === void 0 ? void 0 : context.state);
-          this.state = state;
-          this.parsedPos = this.chunkStart = from + tree.length;
-          for (let i = 0; i < tree.children.length; i++) {
-              this.chunks.push(tree.children[i]);
-              this.chunkPos.push(tree.positions[i]);
-          }
-          if (context && this.parsedPos < context.viewport.from - 100000 /* C.MaxDistanceBeforeViewport */ &&
-              ranges.some(r => r.from <= context.viewport.from && r.to >= context.viewport.from)) {
-              this.state = this.lang.streamParser.startState(getIndentUnit(context.state));
-              context.skipUntilInView(this.parsedPos, context.viewport.from);
-              this.parsedPos = context.viewport.from;
-          }
-          this.moveRangeIndex();
-      }
-      advance() {
-          let context = ParseContext.get();
-          let parseEnd = this.stoppedAt == null ? this.to : Math.min(this.to, this.stoppedAt);
-          let end = Math.min(parseEnd, this.chunkStart + 512 /* C.ChunkSize */);
-          if (context)
-              end = Math.min(end, context.viewport.to);
-          while (this.parsedPos < end)
-              this.parseLine(context);
-          if (this.chunkStart < this.parsedPos)
-              this.finishChunk();
-          if (this.parsedPos >= parseEnd)
-              return this.finish();
-          if (context && this.parsedPos >= context.viewport.to) {
-              context.skipUntilInView(this.parsedPos, parseEnd);
-              return this.finish();
-          }
-          return null;
-      }
-      stopAt(pos) {
-          this.stoppedAt = pos;
-      }
-      lineAfter(pos) {
-          let chunk = this.input.chunk(pos);
-          if (!this.input.lineChunks) {
-              let eol = chunk.indexOf("\n");
-              if (eol > -1)
-                  chunk = chunk.slice(0, eol);
-          }
-          else if (chunk == "\n") {
-              chunk = "";
-          }
-          return pos + chunk.length <= this.to ? chunk : chunk.slice(0, this.to - pos);
-      }
-      nextLine() {
-          let from = this.parsedPos, line = this.lineAfter(from), end = from + line.length;
-          for (let index = this.rangeIndex;;) {
-              let rangeEnd = this.ranges[index].to;
-              if (rangeEnd >= end)
-                  break;
-              line = line.slice(0, rangeEnd - (end - line.length));
-              index++;
-              if (index == this.ranges.length)
-                  break;
-              let rangeStart = this.ranges[index].from;
-              let after = this.lineAfter(rangeStart);
-              line += after;
-              end = rangeStart + after.length;
-          }
-          return { line, end };
-      }
-      skipGapsTo(pos, offset, side) {
-          for (;;) {
-              let end = this.ranges[this.rangeIndex].to, offPos = pos + offset;
-              if (side > 0 ? end > offPos : end >= offPos)
-                  break;
-              let start = this.ranges[++this.rangeIndex].from;
-              offset += start - end;
-          }
-          return offset;
-      }
-      moveRangeIndex() {
-          while (this.ranges[this.rangeIndex].to < this.parsedPos)
-              this.rangeIndex++;
-      }
-      emitToken(id, from, to, offset) {
-          let size = 4;
-          if (this.ranges.length > 1) {
-              offset = this.skipGapsTo(from, offset, 1);
-              from += offset;
-              let len0 = this.chunk.length;
-              offset = this.skipGapsTo(to, offset, -1);
-              to += offset;
-              size += this.chunk.length - len0;
-          }
-          let last = this.chunk.length - 4;
-          if (this.lang.streamParser.mergeTokens && size == 4 && last >= 0 &&
-              this.chunk[last] == id && this.chunk[last + 2] == from)
-              this.chunk[last + 2] = to;
-          else
-              this.chunk.push(id, from, to, size);
-          return offset;
-      }
-      parseLine(context) {
-          let { line, end } = this.nextLine(), offset = 0, { streamParser } = this.lang;
-          let stream = new StringStream(line, context ? context.state.tabSize : 4, context ? getIndentUnit(context.state) : 2);
-          if (stream.eol()) {
-              streamParser.blankLine(this.state, stream.indentUnit);
-          }
-          else {
-              while (!stream.eol()) {
-                  let token = readToken(streamParser.token, stream, this.state);
-                  if (token)
-                      offset = this.emitToken(this.lang.tokenTable.resolve(token), this.parsedPos + stream.start, this.parsedPos + stream.pos, offset);
-                  if (stream.start > 10000 /* C.MaxLineLength */)
-                      break;
-              }
-          }
-          this.parsedPos = end;
-          this.moveRangeIndex();
-          if (this.parsedPos < this.to)
-              this.parsedPos++;
-      }
-      finishChunk() {
-          let tree = Tree.build({
-              buffer: this.chunk,
-              start: this.chunkStart,
-              length: this.parsedPos - this.chunkStart,
-              nodeSet,
-              topID: 0,
-              maxBufferLength: 512 /* C.ChunkSize */,
-              reused: this.chunkReused
-          });
-          tree = new Tree(tree.type, tree.children, tree.positions, tree.length, [[this.lang.stateAfter, this.lang.streamParser.copyState(this.state)]]);
-          this.chunks.push(tree);
-          this.chunkPos.push(this.chunkStart - this.ranges[0].from);
-          this.chunk = [];
-          this.chunkReused = undefined;
-          this.chunkStart = this.parsedPos;
-      }
-      finish() {
-          return new Tree(this.lang.topNode, this.chunks, this.chunkPos, this.parsedPos - this.ranges[0].from).balance();
-      }
-  }
-  function readToken(token, stream, state) {
-      stream.start = stream.pos;
-      for (let i = 0; i < 10; i++) {
-          let result = token(stream, state);
-          if (stream.pos > stream.start)
-              return result;
-      }
-      throw new Error("Stream parser failed to advance stream.");
-  }
   const noTokens = /*@__PURE__*/Object.create(null);
   const typeArray = [NodeType.none];
-  const nodeSet = /*@__PURE__*/new NodeSet(typeArray);
   const warned = [];
   // Cache of node types by name and tags
   const byTag = /*@__PURE__*/Object.create(null);
@@ -20390,16 +20140,6 @@
       ["property", "propertyName"]
   ])
       defaultTable[legacyName] = /*@__PURE__*/createTokenType(noTokens, name);
-  class TokenTable {
-      constructor(extra) {
-          this.extra = extra;
-          this.table = Object.assign(Object.create(null), defaultTable);
-      }
-      resolve(tag) {
-          return !tag ? 0 : this.table[tag] || (this.table[tag] = createTokenType(this.extra, tag));
-      }
-  }
-  const defaultTokenTable = /*@__PURE__*/new TokenTable(noTokens);
   function warnForPart(part, msg) {
       if (warned.indexOf(part) > -1)
           return;
@@ -20444,14 +20184,6 @@
       });
       typeArray.push(type);
       return type.id;
-  }
-  function docID(data, lang) {
-      let type = NodeType.define({ id: typeArray.length, name: "Document", props: [
-              languageDataProp.add(() => data),
-              indentNodeProp.add(() => cx => lang.getIndent(cx))
-          ], top: true });
-      typeArray.push(type);
-      return type;
   }
   ({
       rtl: /*@__PURE__*/Decoration.mark({ class: "cm-iso", inclusive: true, attributes: { dir: "rtl" }, bidiIsolate: Direction.RTL }),
@@ -21839,7 +21571,7 @@
       }
   }));
 
-  const baseTheme$1 = /*@__PURE__*/EditorView.baseTheme({
+  const baseTheme$2 = /*@__PURE__*/EditorView.baseTheme({
       ".cm-tooltip.cm-tooltip-autocomplete": {
           "& > ul": {
               fontFamily: "monospace",
@@ -22219,7 +21951,7 @@
           completionConfig.of(config),
           completionPlugin,
           completionKeymapExt,
-          baseTheme$1
+          baseTheme$2
       ];
   }
   /**
@@ -22994,7 +22726,7 @@
   once).
   */
   const setSearchQuery = /*@__PURE__*/StateEffect.define();
-  const togglePanel = /*@__PURE__*/StateEffect.define();
+  const togglePanel$1 = /*@__PURE__*/StateEffect.define();
   const searchState = /*@__PURE__*/StateField.define({
       create(state) {
           return new SearchState(defaultQuery(state).create(), null);
@@ -23003,7 +22735,7 @@
           for (let effect of tr.effects) {
               if (effect.is(setSearchQuery))
                   value = new SearchState(effect.value.create(), value.panel);
-              else if (effect.is(togglePanel))
+              else if (effect.is(togglePanel$1))
                   value = new SearchState(value.query, effect.value ? createSearchPanel : null);
           }
           return value;
@@ -23231,7 +22963,7 @@
       }
       else {
           view.dispatch({ effects: [
-                  togglePanel.of(true),
+                  togglePanel$1.of(true),
                   state ? setSearchQuery.of(defaultQuery(view.state, state.query.spec)) : StateEffect.appendConfig.of(searchExtensions)
               ] });
       }
@@ -23247,7 +22979,7 @@
       let panel = getPanel(view, createSearchPanel);
       if (panel && panel.dom.contains(view.root.activeElement))
           view.focus();
-      view.dispatch({ effects: togglePanel.of(false) });
+      view.dispatch({ effects: togglePanel$1.of(false) });
       return true;
   };
   /**
@@ -23410,7 +23142,7 @@
       }
       return EditorView.announce.of(`${view.state.phrase("current match")}. ${text} ${view.state.phrase("on line")} ${line.number}.`);
   }
-  const baseTheme = /*@__PURE__*/EditorView.baseTheme({
+  const baseTheme$1 = /*@__PURE__*/EditorView.baseTheme({
       ".cm-panel.cm-search": {
           padding: "2px 6px 4px",
           position: "relative",
@@ -23443,7 +23175,7 @@
   const searchExtensions = [
       searchState,
       /*@__PURE__*/Prec.low(searchHighlighter),
-      baseTheme
+      baseTheme$1
   ];
 
   /**
@@ -24945,231 +24677,1787 @@
   */
   const indentWithTab = { key: "Tab", run: indentMore, shift: indentLess };
 
-  // link --
-  // heading --
-  // emphasis --
-  // strong --
-  // keyword --
-  // atom --
-  // bool --
-  // url --
-  // labelName --
-  // inserted --
-  // deleted --
-  // literal
-  // string
-  // number --
-  // variableName
-  // typeName
-  // namespace --
-  // className
-  // macroName --
-  // propertyName
-  // operator --
-  // comment --
-  // meta
-  // punctuation
-  // invalid --
-
-
-  const customTags = {
-      loraEmbedding: tags.comment,
-      commonPrompt: tags.keyword,
-      unwantedPrompt: tags.namespace,
-      wildcardLink: tags.url,
-      wildcardPipe: tags.operator,
-      wildcardWeight: tags.number,
-      wildcardPick: tags.atom,
-      wildcardSeparator: tags.string,
-      variableSet: tags.definition(tags.variableName),
-      variableUse: tags.variableName,
-      unmatched: tags.invalid,
-
-      brace1: tags.macroName,
-      brace2: tags.heading,
-      brace3: tags.operator,
-      brace4: tags.strong,
-      brace5: tags.atom,
-
-      paren1: tags.bool,
-      paren2: tags.url,
-      paren3: tags.labelName,
-      paren4: tags.inserted,
-      paren5: tags.deleted,
-  };
-
-  const wildcardTags = {
-      wildcardLink: tags.url,
-      wildcardPipe: tags.operator,
-      wildcardWeight: tags.number,
-      wildcardPick: tags.atom,
-      wildcardSeparator: tags.string,
-      variableSet: tags.definition(tags.variableName),
-      variableUse: tags.variableName,
-      unmatched: tags.invalid,
-
-      brace1: tags.macroName,
-      brace2: tags.heading,
-      brace3: tags.operator,
-      brace4: tags.strong,
-      brace5: tags.atom,
-
-      paren1: tags.bool,
-      paren2: tags.url,
-      paren3: tags.labelName,
-      paren4: tags.inserted,
-      paren5: tags.deleted,
-  };
-
-  let commonPrompts = [];
-  let unwantedPrompts = [];
-
-  // Define a simple tokenizer using StreamLanguage
-  const customLanguage = StreamLanguage.define({
-      startState: () => ({
-          braceDepth: 0,
-          parenDepth: 0
-      }),
-      token: (stream, state) => {
-          // Skip spaces
-          if (stream.eatSpace()) return null;
-
-          // LORA pattern search
-          if (stream.peek() === "<") {
-              const startPos = stream.pos;
-              const rest = stream.string.slice(startPos);
-              const match = rest.match(/^<lora:[^>]+>/);
-              if (match) {
-                  stream.pos += match[0].length; // advance the stream
-                  return "loraEmbedding";
+  class SelectedDiagnostic {
+      constructor(from, to, diagnostic) {
+          this.from = from;
+          this.to = to;
+          this.diagnostic = diagnostic;
+      }
+  }
+  class LintState {
+      constructor(diagnostics, panel, selected) {
+          this.diagnostics = diagnostics;
+          this.panel = panel;
+          this.selected = selected;
+      }
+      static init(diagnostics, panel, state) {
+          // Filter the list of diagnostics for which to create markers
+          let diagnosticFilter = state.facet(lintConfig).markerFilter;
+          if (diagnosticFilter)
+              diagnostics = diagnosticFilter(diagnostics, state);
+          let sorted = diagnostics.slice().sort((a, b) => a.from - b.from || a.to - b.to);
+          let deco = new RangeSetBuilder(), active = [], pos = 0;
+          let scan = state.doc.iter(), scanPos = 0, docLen = state.doc.length;
+          for (let i = 0;;) {
+              let next = i == sorted.length ? null : sorted[i];
+              if (!next && !active.length)
+                  break;
+              let from, to;
+              if (active.length) {
+                  from = pos;
+                  to = active.reduce((p, d) => Math.min(p, d.to), next && next.from > from ? next.from : 1e8);
               }
+              else {
+                  from = next.from;
+                  if (from > docLen)
+                      break;
+                  to = next.to;
+                  active.push(next);
+                  i++;
+              }
+              while (i < sorted.length) {
+                  let next = sorted[i];
+                  if (next.from == from && (next.to > next.from || next.to == from)) {
+                      active.push(next);
+                      i++;
+                      to = Math.min(next.to, to);
+                  }
+                  else {
+                      to = Math.min(next.from, to);
+                      break;
+                  }
+              }
+              to = Math.min(to, docLen);
+              let widget = false;
+              if (active.some(d => d.from == from && (d.to == to || to == docLen))) {
+                  widget = from == to;
+                  if (!widget && to - from < 10) {
+                      let behind = from - (scanPos + scan.value.length);
+                      if (behind > 0) {
+                          scan.next(behind);
+                          scanPos = from;
+                      }
+                      for (let check = from;;) {
+                          if (check >= to) {
+                              widget = true;
+                              break;
+                          }
+                          if (!scan.lineBreak && scanPos + scan.value.length > check)
+                              break;
+                          check = scanPos + scan.value.length;
+                          scanPos += scan.value.length;
+                          scan.next();
+                      }
+                  }
+              }
+              let sev = maxSeverity(active);
+              if (widget) {
+                  deco.add(from, from, Decoration.widget({
+                      widget: new DiagnosticWidget(sev),
+                      diagnostics: active.slice()
+                  }));
+              }
+              else {
+                  let markClass = active.reduce((c, d) => d.markClass ? c + " " + d.markClass : c, "");
+                  deco.add(from, to, Decoration.mark({
+                      class: "cm-lintRange cm-lintRange-" + sev + markClass,
+                      diagnostics: active.slice(),
+                      inclusiveEnd: active.some(a => a.to > to)
+                  }));
+              }
+              pos = to;
+              if (pos == docLen)
+                  break;
+              for (let i = 0; i < active.length; i++)
+                  if (active[i].to <= pos)
+                      active.splice(i--, 1);
           }
-
-          const wildcardToken = tryWildcardToken(stream, state);
-          if (wildcardToken) return wildcardToken;
-
-          if (stream.match(/[^,{}()|]+(?=,|$)/)) {
-              const word = stream.current().trim();
-              if (commonPrompts.includes(word)) {
-                  return "commonPrompt";
-              }
-              if (unwantedPrompts.includes(word)) {
-                  return "unwantedPrompt";
-              }
-          }
-
-          stream.next();
-          return null;
+          let set = deco.finish();
+          return new LintState(set, panel, findDiagnostic(set));
+      }
+  }
+  function findDiagnostic(diagnostics, diagnostic = null, after = 0) {
+      let found = null;
+      diagnostics.between(after, 1e9, (from, to, { spec }) => {
+          if (diagnostic && spec.diagnostics.indexOf(diagnostic) < 0)
+              return;
+          if (!found)
+              found = new SelectedDiagnostic(from, to, diagnostic || spec.diagnostics[0]);
+          else if (spec.diagnostics.indexOf(found.diagnostic) < 0)
+              return false;
+          else
+              found = new SelectedDiagnostic(found.from, to, found.diagnostic);
+      });
+      return found;
+  }
+  function hideTooltip(tr, tooltip) {
+      let from = tooltip.pos, to = tooltip.end || from;
+      let result = tr.state.facet(lintConfig).hideOn(tr, from, to);
+      if (result != null)
+          return result;
+      let line = tr.startState.doc.lineAt(tooltip.pos);
+      return !!(tr.effects.some(e => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(line.from, Math.max(line.to, to)));
+  }
+  function maybeEnableLint(state, effects) {
+      return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
+  }
+  /**
+  Returns a transaction spec which updates the current set of
+  diagnostics, and enables the lint extension if if wasn't already
+  active.
+  */
+  function setDiagnostics(state, diagnostics) {
+      return {
+          effects: maybeEnableLint(state, [setDiagnosticsEffect.of(diagnostics)])
+      };
+  }
+  /**
+  The state effect that updates the set of active diagnostics. Can
+  be useful when writing an extension that needs to track these.
+  */
+  const setDiagnosticsEffect = /*@__PURE__*/StateEffect.define();
+  const togglePanel = /*@__PURE__*/StateEffect.define();
+  const movePanelSelection = /*@__PURE__*/StateEffect.define();
+  const lintState = /*@__PURE__*/StateField.define({
+      create() {
+          return new LintState(Decoration.none, null, null);
       },
-      tokenTable: customTags,
-      blankLine: (state) => {
-          state.braceDepth = 0;
-          state.parenDepth = 0;
+      update(value, tr) {
+          if (tr.docChanged && value.diagnostics.size) {
+              let mapped = value.diagnostics.map(tr.changes), selected = null, panel = value.panel;
+              if (value.selected) {
+                  let selPos = tr.changes.mapPos(value.selected.from, 1);
+                  selected = findDiagnostic(mapped, value.selected.diagnostic, selPos) || findDiagnostic(mapped, null, selPos);
+              }
+              if (!mapped.size && panel && tr.state.facet(lintConfig).autoPanel)
+                  panel = null;
+              value = new LintState(mapped, panel, selected);
+          }
+          for (let effect of tr.effects) {
+              if (effect.is(setDiagnosticsEffect)) {
+                  let panel = !tr.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
+                  value = LintState.init(effect.value, panel, tr.state);
+              }
+              else if (effect.is(togglePanel)) {
+                  value = new LintState(value.diagnostics, effect.value ? LintPanel.open : null, value.selected);
+              }
+              else if (effect.is(movePanelSelection)) {
+                  value = new LintState(value.diagnostics, value.panel, effect.value);
+              }
+          }
+          return value;
+      },
+      provide: f => [showPanel.from(f, val => val.panel),
+          EditorView.decorations.from(f, s => s.diagnostics)]
+  });
+  const activeMark = /*@__PURE__*/Decoration.mark({ class: "cm-lintRange cm-lintRange-active" });
+  function lintTooltip(view, pos, side) {
+      let { diagnostics } = view.state.field(lintState);
+      let found, start = -1, end = -1;
+      diagnostics.between(pos - (side < 0 ? 1 : 0), pos + (side > 0 ? 1 : 0), (from, to, { spec }) => {
+          if (pos >= from && pos <= to &&
+              (from == to || ((pos > from || side > 0) && (pos < to || side < 0)))) {
+              found = spec.diagnostics;
+              start = from;
+              end = to;
+              return false;
+          }
+      });
+      let diagnosticFilter = view.state.facet(lintConfig).tooltipFilter;
+      if (found && diagnosticFilter)
+          found = diagnosticFilter(found, view.state);
+      if (!found)
+          return null;
+      return {
+          pos: start,
+          end: end,
+          above: true,
+          create() {
+              return { dom: diagnosticsTooltip(view, found) };
+          }
+      };
+  }
+  function diagnosticsTooltip(view, diagnostics) {
+      return crelt("ul", { class: "cm-tooltip-lint" }, diagnostics.map(d => renderDiagnostic(view, d, false)));
+  }
+  /**
+  Command to open and focus the lint panel.
+  */
+  const openLintPanel = (view) => {
+      let field = view.state.field(lintState, false);
+      if (!field || !field.panel)
+          view.dispatch({ effects: maybeEnableLint(view.state, [togglePanel.of(true)]) });
+      let panel = getPanel(view, LintPanel.open);
+      if (panel)
+          panel.dom.querySelector(".cm-panel-lint ul").focus();
+      return true;
+  };
+  /**
+  Command to close the lint panel, when open.
+  */
+  const closeLintPanel = (view) => {
+      let field = view.state.field(lintState, false);
+      if (!field || !field.panel)
+          return false;
+      view.dispatch({ effects: togglePanel.of(false) });
+      return true;
+  };
+  /**
+  Move the selection to the next diagnostic.
+  */
+  const nextDiagnostic = (view) => {
+      let field = view.state.field(lintState, false);
+      if (!field)
+          return false;
+      let sel = view.state.selection.main, next = findDiagnostic(field.diagnostics, null, sel.to + 1);
+      if (!next) {
+          next = findDiagnostic(field.diagnostics, null, 0);
+          if (!next || next.from == sel.from && next.to == sel.to)
+              return false;
+      }
+      view.dispatch({ selection: { anchor: next.from, head: next.to }, scrollIntoView: true });
+      activateHover(view, next.from, 1, {
+          tooltip: lintHover,
+          until: tr => tr.docChanged || tr.newSelection.main.head < next.from || tr.newSelection.main.head > next.to
+      });
+      return true;
+  };
+  /**
+  A set of default key bindings for the lint functionality.
+
+  - Ctrl-Shift-m (Cmd-Shift-m on macOS): [`openLintPanel`](https://codemirror.net/6/docs/ref/#lint.openLintPanel)
+  - F8: [`nextDiagnostic`](https://codemirror.net/6/docs/ref/#lint.nextDiagnostic)
+  */
+  const lintKeymap = [
+      { key: "Mod-Shift-m", run: openLintPanel, preventDefault: true },
+      { key: "F8", run: nextDiagnostic }
+  ];
+  const lintPlugin = /*@__PURE__*/ViewPlugin.fromClass(class {
+      constructor(view) {
+          this.view = view;
+          this.timeout = -1;
+          this.set = true;
+          let { delay } = view.state.facet(lintConfig);
+          this.lintTime = Date.now() + delay;
+          this.run = this.run.bind(this);
+          this.timeout = setTimeout(this.run, delay);
+      }
+      run() {
+          clearTimeout(this.timeout);
+          let now = Date.now();
+          if (now < this.lintTime - 10) {
+              this.timeout = setTimeout(this.run, this.lintTime - now);
+          }
+          else {
+              this.set = false;
+              let { state } = this.view, { sources } = state.facet(lintConfig);
+              if (sources.length)
+                  batchResults(sources.map(s => Promise.resolve(s(this.view))), annotations => {
+                      if (this.view.state.doc == state.doc)
+                          this.view.dispatch(setDiagnostics(this.view.state, annotations.reduce((a, b) => a.concat(b))));
+                  }, error => { logException(this.view.state, error); });
+          }
+      }
+      update(update) {
+          let config = update.state.facet(lintConfig);
+          if (update.docChanged || config != update.startState.facet(lintConfig) ||
+              config.needsRefresh && config.needsRefresh(update)) {
+              this.lintTime = Date.now() + config.delay;
+              if (!this.set) {
+                  this.set = true;
+                  this.timeout = setTimeout(this.run, config.delay);
+              }
+          }
+      }
+      force() {
+          if (this.set) {
+              this.lintTime = Date.now();
+              this.run();
+          }
+      }
+      destroy() {
+          clearTimeout(this.timeout);
+      }
+  });
+  function batchResults(promises, sink, error) {
+      let collected = [], timeout = -1;
+      for (let p of promises)
+          p.then(value => {
+              collected.push(value);
+              clearTimeout(timeout);
+              if (collected.length == promises.length)
+                  sink(collected);
+              else
+                  timeout = setTimeout(() => sink(collected), 200);
+          }, error);
+  }
+  const lintConfig = /*@__PURE__*/Facet.define({
+      combine(input) {
+          return {
+              sources: input.map(i => i.source).filter(x => x != null),
+              ...combineConfig(input.map(i => i.config), {
+                  delay: 750,
+                  markerFilter: null,
+                  tooltipFilter: null,
+                  needsRefresh: null,
+                  hideOn: () => null,
+              }, {
+                  delay: Math.max,
+                  markerFilter: combineFilter,
+                  tooltipFilter: combineFilter,
+                  needsRefresh: (a, b) => !a ? b : !b ? a : u => a(u) || b(u),
+                  hideOn: (a, b) => !a ? b : !b ? a : (t, x, y) => a(t, x, y) || b(t, x, y),
+                  autoPanel: (a, b) => a || b
+              })
+          };
+      }
+  });
+  function combineFilter(a, b) {
+      return !a ? b : !b ? a : (d, s) => b(a(d, s), s);
+  }
+  /**
+  Given a diagnostic source, this function returns an extension that
+  enables linting with that source. It will be called whenever the
+  editor is idle (after its content changed).
+
+  Note that settings given here will apply to all linters active in
+  the editor. If `null` is given as source, this only configures the
+  lint extension.
+  */
+  function linter(source, config = {}) {
+      return [
+          lintConfig.of({ source, config }),
+          lintPlugin,
+          lintExtensions
+      ];
+  }
+  function assignKeys(actions) {
+      let assigned = [];
+      if (actions)
+          actions: for (let { name } of actions) {
+              for (let i = 0; i < name.length; i++) {
+                  let ch = name[i];
+                  if (/[a-zA-Z]/.test(ch) && !assigned.some(c => c.toLowerCase() == ch.toLowerCase())) {
+                      assigned.push(ch);
+                      continue actions;
+                  }
+              }
+              assigned.push("");
+          }
+      return assigned;
+  }
+  function renderDiagnostic(view, diagnostic, inPanel) {
+      var _a;
+      let keys = inPanel ? assignKeys(diagnostic.actions) : [];
+      return crelt("li", { class: "cm-diagnostic cm-diagnostic-" + diagnostic.severity }, crelt("span", { class: "cm-diagnosticText" }, diagnostic.renderMessage ? diagnostic.renderMessage(view) : diagnostic.message), (_a = diagnostic.actions) === null || _a === void 0 ? void 0 : _a.map((action, i) => {
+          let fired = false, click = (e) => {
+              e.preventDefault();
+              if (fired)
+                  return;
+              fired = true;
+              let found = findDiagnostic(view.state.field(lintState).diagnostics, diagnostic);
+              if (found)
+                  action.apply(view, found.from, found.to);
+          };
+          let { name } = action, keyIndex = keys[i] ? name.indexOf(keys[i]) : -1;
+          let nameElt = keyIndex < 0 ? name : [name.slice(0, keyIndex),
+              crelt("u", name.slice(keyIndex, keyIndex + 1)),
+              name.slice(keyIndex + 1)];
+          let markClass = action.markClass ? " " + action.markClass : "";
+          return crelt("button", {
+              type: "button",
+              class: "cm-diagnosticAction" + markClass,
+              onclick: click,
+              onmousedown: click,
+              "aria-label": ` Action: ${name}${keyIndex < 0 ? "" : ` (access key "${keys[i]})"`}.`
+          }, nameElt);
+      }), diagnostic.source && crelt("div", { class: "cm-diagnosticSource" }, diagnostic.source));
+  }
+  class DiagnosticWidget extends WidgetType {
+      constructor(sev) {
+          super();
+          this.sev = sev;
+      }
+      eq(other) { return other.sev == this.sev; }
+      toDOM() {
+          return crelt("span", { class: "cm-lintPoint cm-lintPoint-" + this.sev });
+      }
+  }
+  class PanelItem {
+      constructor(view, diagnostic) {
+          this.diagnostic = diagnostic;
+          this.id = "item_" + Math.floor(Math.random() * 0xffffffff).toString(16);
+          this.dom = renderDiagnostic(view, diagnostic, true);
+          this.dom.id = this.id;
+          this.dom.setAttribute("role", "option");
+      }
+  }
+  class LintPanel {
+      constructor(view) {
+          this.view = view;
+          this.items = [];
+          let onkeydown = (event) => {
+              if (event.ctrlKey || event.altKey || event.metaKey)
+                  return;
+              if (event.keyCode == 27) { // Escape
+                  closeLintPanel(this.view);
+                  this.view.focus();
+              }
+              else if (event.keyCode == 38 || event.keyCode == 33) { // ArrowUp, PageUp
+                  this.moveSelection((this.selectedIndex - 1 + this.items.length) % this.items.length);
+              }
+              else if (event.keyCode == 40 || event.keyCode == 34) { // ArrowDown, PageDown
+                  this.moveSelection((this.selectedIndex + 1) % this.items.length);
+              }
+              else if (event.keyCode == 36) { // Home
+                  this.moveSelection(0);
+              }
+              else if (event.keyCode == 35) { // End
+                  this.moveSelection(this.items.length - 1);
+              }
+              else if (event.keyCode == 13) { // Enter
+                  this.view.focus();
+              }
+              else if (event.keyCode >= 65 && event.keyCode <= 90 && this.selectedIndex >= 0) { // A-Z
+                  let { diagnostic } = this.items[this.selectedIndex], keys = assignKeys(diagnostic.actions);
+                  for (let i = 0; i < keys.length; i++)
+                      if (keys[i].toUpperCase().charCodeAt(0) == event.keyCode) {
+                          let found = findDiagnostic(this.view.state.field(lintState).diagnostics, diagnostic);
+                          if (found)
+                              diagnostic.actions[i].apply(view, found.from, found.to);
+                      }
+              }
+              else {
+                  return;
+              }
+              event.preventDefault();
+          };
+          let onclick = (event) => {
+              for (let i = 0; i < this.items.length; i++) {
+                  if (this.items[i].dom.contains(event.target))
+                      this.moveSelection(i);
+              }
+          };
+          this.list = crelt("ul", {
+              tabIndex: 0,
+              role: "listbox",
+              "aria-label": this.view.state.phrase("Diagnostics"),
+              onkeydown,
+              onclick
+          });
+          this.dom = crelt("div", { class: "cm-panel-lint" }, this.list, crelt("button", {
+              type: "button",
+              name: "close",
+              "aria-label": this.view.state.phrase("close"),
+              onclick: () => closeLintPanel(this.view)
+          }, "×"));
+          this.update();
+      }
+      get selectedIndex() {
+          let selected = this.view.state.field(lintState).selected;
+          if (!selected)
+              return -1;
+          for (let i = 0; i < this.items.length; i++)
+              if (this.items[i].diagnostic == selected.diagnostic)
+                  return i;
+          return -1;
+      }
+      update() {
+          let { diagnostics, selected } = this.view.state.field(lintState);
+          let i = 0, needsSync = false, newSelectedItem = null;
+          let seen = new Set();
+          diagnostics.between(0, this.view.state.doc.length, (_start, _end, { spec }) => {
+              for (let diagnostic of spec.diagnostics) {
+                  if (seen.has(diagnostic))
+                      continue;
+                  seen.add(diagnostic);
+                  let found = -1, item;
+                  for (let j = i; j < this.items.length; j++)
+                      if (this.items[j].diagnostic == diagnostic) {
+                          found = j;
+                          break;
+                      }
+                  if (found < 0) {
+                      item = new PanelItem(this.view, diagnostic);
+                      this.items.splice(i, 0, item);
+                      needsSync = true;
+                  }
+                  else {
+                      item = this.items[found];
+                      if (found > i) {
+                          this.items.splice(i, found - i);
+                          needsSync = true;
+                      }
+                  }
+                  if (selected && item.diagnostic == selected.diagnostic) {
+                      if (!item.dom.hasAttribute("aria-selected")) {
+                          item.dom.setAttribute("aria-selected", "true");
+                          newSelectedItem = item;
+                      }
+                  }
+                  else if (item.dom.hasAttribute("aria-selected")) {
+                      item.dom.removeAttribute("aria-selected");
+                  }
+                  i++;
+              }
+          });
+          while (i < this.items.length && !(this.items.length == 1 && this.items[0].diagnostic.from < 0)) {
+              needsSync = true;
+              this.items.pop();
+          }
+          if (this.items.length == 0) {
+              this.items.push(new PanelItem(this.view, {
+                  from: -1, to: -1,
+                  severity: "info",
+                  message: this.view.state.phrase("No diagnostics")
+              }));
+              needsSync = true;
+          }
+          if (newSelectedItem) {
+              this.list.setAttribute("aria-activedescendant", newSelectedItem.id);
+              this.view.requestMeasure({
+                  key: this,
+                  read: () => ({ sel: newSelectedItem.dom.getBoundingClientRect(), panel: this.list.getBoundingClientRect() }),
+                  write: ({ sel, panel }) => {
+                      let scaleY = panel.height / this.list.offsetHeight;
+                      if (sel.top < panel.top)
+                          this.list.scrollTop -= (panel.top - sel.top) / scaleY;
+                      else if (sel.bottom > panel.bottom)
+                          this.list.scrollTop += (sel.bottom - panel.bottom) / scaleY;
+                  }
+              });
+          }
+          else if (this.selectedIndex < 0) {
+              this.list.removeAttribute("aria-activedescendant");
+          }
+          if (needsSync)
+              this.sync();
+      }
+      sync() {
+          let domPos = this.list.firstChild;
+          function rm() {
+              let prev = domPos;
+              domPos = prev.nextSibling;
+              prev.remove();
+          }
+          for (let item of this.items) {
+              if (item.dom.parentNode == this.list) {
+                  while (domPos != item.dom)
+                      rm();
+                  domPos = item.dom.nextSibling;
+              }
+              else {
+                  this.list.insertBefore(item.dom, domPos);
+              }
+          }
+          while (domPos)
+              rm();
+      }
+      moveSelection(selectedIndex) {
+          if (this.selectedIndex < 0)
+              return;
+          let field = this.view.state.field(lintState);
+          let selection = findDiagnostic(field.diagnostics, this.items[selectedIndex].diagnostic);
+          if (!selection)
+              return;
+          this.view.dispatch({
+              selection: { anchor: selection.from, head: selection.to },
+              scrollIntoView: true,
+              effects: movePanelSelection.of(selection)
+          });
+      }
+      static open(view) { return new LintPanel(view); }
+  }
+  function svg(content, attrs = `viewBox="0 0 40 40"`) {
+      return `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" ${attrs}>${encodeURIComponent(content)}</svg>')`;
+  }
+  function underline(color) {
+      return svg(`<path d="m0 2.5 l2 -1.5 l1 0 l2 1.5 l1 0" stroke="${color}" fill="none" stroke-width=".7"/>`, `width="6" height="3"`);
+  }
+  const baseTheme = /*@__PURE__*/EditorView.baseTheme({
+      ".cm-diagnostic": {
+          padding: "3px 6px 3px 8px",
+          marginLeft: "-1px",
+          display: "block",
+          whiteSpace: "pre-wrap"
+      },
+      ".cm-diagnostic-error": { borderLeft: "5px solid #d11" },
+      ".cm-diagnostic-warning": { borderLeft: "5px solid orange" },
+      ".cm-diagnostic-info": { borderLeft: "5px solid #999" },
+      ".cm-diagnostic-hint": { borderLeft: "5px solid #66d" },
+      ".cm-diagnosticAction": {
+          font: "inherit",
+          border: "none",
+          padding: "2px 4px",
+          backgroundColor: "#444",
+          color: "white",
+          borderRadius: "3px",
+          marginLeft: "8px",
+          cursor: "pointer"
+      },
+      ".cm-diagnosticSource": {
+          fontSize: "70%",
+          opacity: .7
+      },
+      ".cm-lintRange": {
+          backgroundPosition: "left bottom",
+          backgroundRepeat: "repeat-x",
+          paddingBottom: "0.7px",
+      },
+      ".cm-lintRange-error": { backgroundImage: /*@__PURE__*/underline("#f11") },
+      ".cm-lintRange-warning": { backgroundImage: /*@__PURE__*/underline("orange") },
+      ".cm-lintRange-info": { backgroundImage: /*@__PURE__*/underline("#999") },
+      ".cm-lintRange-hint": { backgroundImage: /*@__PURE__*/underline("#66d") },
+      ".cm-lintRange-active": { backgroundColor: "#ffdd9980" },
+      ".cm-tooltip-lint": {
+          padding: 0,
+          margin: 0
+      },
+      ".cm-lintPoint": {
+          position: "relative",
+          "&:after": {
+              content: '""',
+              position: "absolute",
+              bottom: 0,
+              left: "-2px",
+              borderLeft: "3px solid transparent",
+              borderRight: "3px solid transparent",
+              borderBottom: "4px solid #d11"
+          }
+      },
+      ".cm-lintPoint-warning": {
+          "&:after": { borderBottomColor: "orange" }
+      },
+      ".cm-lintPoint-info": {
+          "&:after": { borderBottomColor: "#999" }
+      },
+      ".cm-lintPoint-hint": {
+          "&:after": { borderBottomColor: "#66d" }
+      },
+      ".cm-panel.cm-panel-lint": {
+          position: "relative",
+          "& ul": {
+              maxHeight: "100px",
+              overflowY: "auto",
+              "& [aria-selected]": {
+                  backgroundColor: "#ddd",
+                  "& u": { textDecoration: "underline" }
+              },
+              "&:focus [aria-selected]": {
+                  background_fallback: "#bdf",
+                  backgroundColor: "Highlight",
+                  color_fallback: "white",
+                  color: "HighlightText"
+              },
+              "& u": { textDecoration: "none" },
+              padding: 0,
+              margin: 0
+          },
+          "& [name=close]": {
+              position: "absolute",
+              top: "0",
+              right: "2px",
+              background: "inherit",
+              border: "none",
+              font: "inherit",
+              padding: 0,
+              margin: 0
+          }
+      },
+      "&dark .cm-lintRange-active": { backgroundColor: "#86714a80" },
+      "&dark .cm-panel.cm-panel-lint ul": {
+          "& [aria-selected]": {
+              backgroundColor: "#2e343e",
+          },
+      }
+  });
+  function severityWeight(sev) {
+      return sev == "error" ? 4 : sev == "warning" ? 3 : sev == "info" ? 2 : 1;
+  }
+  function maxSeverity(diagnostics) {
+      let sev = "hint", weight = 1;
+      for (let d of diagnostics) {
+          let w = severityWeight(d.severity);
+          if (w > weight) {
+              weight = w;
+              sev = d.severity;
+          }
+      }
+      return sev;
+  }
+  class LintGutterMarker extends GutterMarker {
+      constructor(diagnostics) {
+          super();
+          this.diagnostics = diagnostics;
+          this.severity = maxSeverity(diagnostics);
+      }
+      toDOM(view) {
+          let elt = document.createElement("div");
+          elt.className = "cm-lint-marker cm-lint-marker-" + this.severity;
+          let diagnostics = this.diagnostics;
+          let diagnosticsFilter = view.state.facet(lintGutterConfig).tooltipFilter;
+          if (diagnosticsFilter)
+              diagnostics = diagnosticsFilter(diagnostics, view.state);
+          if (diagnostics.length)
+              elt.onmouseover = () => gutterMarkerMouseOver(view, elt, diagnostics);
+          return elt;
+      }
+  }
+  function trackHoverOn(view, marker) {
+      let mousemove = (event) => {
+          let rect = marker.getBoundingClientRect();
+          if (event.clientX > rect.left - 10 /* Hover.Margin */ && event.clientX < rect.right + 10 /* Hover.Margin */ &&
+              event.clientY > rect.top - 10 /* Hover.Margin */ && event.clientY < rect.bottom + 10 /* Hover.Margin */)
+              return;
+          for (let target = event.target; target; target = target.parentNode) {
+              if (target.nodeType == 1 && target.classList.contains("cm-tooltip-lint"))
+                  return;
+          }
+          window.removeEventListener("mousemove", mousemove);
+          if (view.state.field(lintGutterTooltip))
+              view.dispatch({ effects: setLintGutterTooltip.of(null) });
+      };
+      window.addEventListener("mousemove", mousemove);
+  }
+  function gutterMarkerMouseOver(view, marker, diagnostics) {
+      function hovered() {
+          let line = view.elementAtHeight(marker.getBoundingClientRect().top + 5 - view.documentTop);
+          const linePos = view.coordsAtPos(line.from);
+          if (linePos) {
+              view.dispatch({ effects: setLintGutterTooltip.of({
+                      pos: line.from,
+                      above: false,
+                      clip: false,
+                      create() {
+                          return {
+                              dom: diagnosticsTooltip(view, diagnostics),
+                              getCoords: () => marker.getBoundingClientRect()
+                          };
+                      }
+                  }) });
+          }
+          marker.onmouseout = marker.onmousemove = null;
+          trackHoverOn(view, marker);
+      }
+      let { hoverTime } = view.state.facet(lintGutterConfig);
+      let hoverTimeout = setTimeout(hovered, hoverTime);
+      marker.onmouseout = () => {
+          clearTimeout(hoverTimeout);
+          marker.onmouseout = marker.onmousemove = null;
+      };
+      marker.onmousemove = () => {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = setTimeout(hovered, hoverTime);
+      };
+  }
+  function markersForDiagnostics(doc, diagnostics) {
+      let byLine = Object.create(null);
+      for (let diagnostic of diagnostics) {
+          let line = doc.lineAt(diagnostic.from);
+          (byLine[line.from] || (byLine[line.from] = [])).push(diagnostic);
+      }
+      let markers = [];
+      for (let line in byLine) {
+          markers.push(new LintGutterMarker(byLine[line]).range(+line));
+      }
+      return RangeSet.of(markers, true);
+  }
+  const lintGutterExtension = /*@__PURE__*/gutter({
+      class: "cm-gutter-lint",
+      markers: view => view.state.field(lintGutterMarkers),
+      widgetMarker: (view, widget, block) => {
+          let diagnostics = [];
+          view.state.field(lintGutterMarkers).between(block.from, block.to, (from, to, value) => {
+              if (from > block.from && from < block.to)
+                  diagnostics.push(...value.diagnostics);
+          });
+          return diagnostics.length ? new LintGutterMarker(diagnostics) : null;
+      }
+  });
+  const lintGutterMarkers = /*@__PURE__*/StateField.define({
+      create() {
+          return RangeSet.empty;
+      },
+      update(markers, tr) {
+          markers = markers.map(tr.changes);
+          let diagnosticFilter = tr.state.facet(lintGutterConfig).markerFilter;
+          for (let effect of tr.effects) {
+              if (effect.is(setDiagnosticsEffect)) {
+                  let diagnostics = effect.value;
+                  if (diagnosticFilter)
+                      diagnostics = diagnosticFilter(diagnostics || [], tr.state);
+                  markers = markersForDiagnostics(tr.state.doc, diagnostics.slice(0));
+              }
+          }
+          return markers;
+      }
+  });
+  const setLintGutterTooltip = /*@__PURE__*/StateEffect.define();
+  const lintGutterTooltip = /*@__PURE__*/StateField.define({
+      create() { return null; },
+      update(tooltip, tr) {
+          if (tooltip && tr.docChanged)
+              tooltip = hideTooltip(tr, tooltip) ? null : { ...tooltip, pos: tr.changes.mapPos(tooltip.pos) };
+          return tr.effects.reduce((t, e) => e.is(setLintGutterTooltip) ? e.value : t, tooltip);
+      },
+      provide: field => showTooltip.from(field)
+  });
+  const lintGutterTheme = /*@__PURE__*/EditorView.baseTheme({
+      ".cm-gutter-lint": {
+          width: "1.4em",
+          "& .cm-gutterElement": {
+              padding: ".2em"
+          }
+      },
+      ".cm-lint-marker": {
+          width: "1em",
+          height: "1em"
+      },
+      ".cm-lint-marker-info": {
+          content: /*@__PURE__*/svg(`<path fill="#aaf" stroke="#77e" stroke-width="6" stroke-linejoin="round" d="M5 5L35 5L35 35L5 35Z"/>`)
+      },
+      ".cm-lint-marker-warning": {
+          content: /*@__PURE__*/svg(`<path fill="#fe8" stroke="#fd7" stroke-width="6" stroke-linejoin="round" d="M20 6L37 35L3 35Z"/>`),
+      },
+      ".cm-lint-marker-error": {
+          content: /*@__PURE__*/svg(`<circle cx="20" cy="20" r="15" fill="#f87" stroke="#f43" stroke-width="6"/>`)
       },
   });
+  const lintHover = /*@__PURE__*/hoverTooltip(lintTooltip, { hideOn: hideTooltip });
+  const lintExtensions = [
+      lintState,
+      /*@__PURE__*/EditorView.decorations.compute([lintState], state => {
+          let { selected, panel } = state.field(lintState);
+          return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
+              activeMark.range(selected.from, selected.to)
+          ]);
+      }),
+      lintHover,
+      baseTheme
+  ];
+  const lintGutterConfig = /*@__PURE__*/Facet.define({
+      combine(configs) {
+          return combineConfig(configs, {
+              hoverTime: 300 /* Hover.Time */,
+              markerFilter: null,
+              tooltipFilter: null
+          });
+      }
+  });
+  /**
+  Returns an extension that installs a gutter showing markers for
+  each line that has diagnostics, which can be hovered over to see
+  the diagnostics.
+  */
+  function lintGutter(config = {}) {
+      return [lintGutterConfig.of(config), lintGutterMarkers, lintGutterExtension, lintGutterTheme, lintGutterTooltip];
+  }
 
-  function consumeVariableToken(stream) {
-      const rest = stream.string.slice(stream.pos);
-      if (!rest.startsWith("${")) return null;
+  // Whole-document parser for the sd-dynamic-prompts template language, plus the A1111
+  // bits that live alongside it in prompts ((emphasis), [alternation], <lora:...>).
+  //
+  // Pure module (no CodeMirror imports) so it can be unit-tested in Node. It mirrors the
+  // grammar in dynamicprompts/parser/parse.py and never throws: malformed input produces
+  // diagnostics and parsing continues.
+  //
+  //   parsePrompt(text, {mode}) -> {tokens, diagnostics, blocks, wildcards, variables, text}
+  //
+  //   tokens      [{from, to, type, depth?}]            highlighting
+  //   diagnostics [{from, to, severity, code, message}] 'error' | 'warning'
+  //   blocks      [{from, to, depth}]                   balanced {...}, ${...}, %{...}
+  //   wildcards   [{from, to, path, dynamic}]           for the missing-file check
+  //   variables   [{from, to, name, kind, hasDefault}]  kind: 'set' | 'use'
+  //   text        [{from, to}]                          plain prompt text (spell check)
 
-      let innerBraceDepth = 0;
-      for (let i = 2; i < rest.length; i++) {
-          const ch = rest[i];
-          if (ch === "{") {
-              innerBraceDepth++;
-          } else if (ch === "}") {
-              if (innerBraceDepth > 0) {
-                  innerBraceDepth--;
+  const SAMPLERS = '~!@';
+  const BOUND_RE = /(\d+-\d+|\d+-|-\d+|\d+)\$\$/y;
+  const SEPARATOR_RE = /[^${}]+\$\$/y;
+  const WEIGHT_RE = /(\s*)([+-]?(?:\d+\.\d*|\.\d+|\d+))::/y;
+  const BAD_WEIGHT_RE = /(\s*)([^\s|{}:$,]+)::/y;
+  const VAR_HEAD_RE = /\$\{(\s*)([A-Za-z_-][A-Za-z0-9_-]*)?(\s*)(\?=!?|=!?|:)?/y;
+  const NETWORK_RE = /<[A-Za-z_][\w-]*:[^<>\n]*>/y;
+  const NETWORK_OPEN_RE = /<(?:lora|lyco|hypernet):/iy;
+  // After a closed wildcard: more path-like text ending in another "__" means the path
+  // itself contained "__" (e.g. __lib/hair__color__).
+  const DANGLING_RE = /[^\s,|{}()[\]<>_][^\s,|{}()[\]<>]*?__/y;
+
+  const BRACE_LIKE = new Set(['brace', 'var', 'wrap']);
+
+  function matchAt(re, text, index) {
+      re.lastIndex = index;
+      return re.exec(text);
+  }
+
+  function scan(text, start, end, out, opts) {
+      const {tokens, diagnostics, blocks, wildcards, variables, plain} = out;
+      const stack = [];
+
+      const tok = (type, from, to, depth) => {
+          if (to <= from) return;
+          tokens.push(depth ? {from, to, type, depth} : {from, to, type});
+          plain.fill(0, from, to);
+      };
+      const diag = (severity, code, from, to, message) => {
+          diagnostics.push({from, to: Math.max(to, from + 1), severity, code, message});
+      };
+      const error = (code, from, to, message) => diag('error', code, from, to, message);
+      const warn = (code, from, to, message) => diag('warning', code, from, to, message);
+
+      const lineEnd = (index) => {
+          const nl = text.indexOf('\n', index);
+          return nl === -1 || nl > end ? end : nl;
+      };
+      // Nesting depth (1-5) a new frame of this kind would get; drives the depth colours.
+      const nextDepth = (type) => {
+          const same = BRACE_LIKE.has(type)
+              ? stack.filter((f) => BRACE_LIKE.has(f.type))
+              : stack.filter((f) => f.type === type);
+          return Math.min(same.length + 1, 5);
+      };
+      const push = (frame) => {
+          frame.depth = nextDepth(frame.type);
+          stack.push(frame);
+          return frame;
+      };
+
+      const reportUnclosed = (frame) => {
+          if (frame.type === 'paren') {
+              error('unclosed-paren', frame.from, frame.from + 1, 'Unclosed "(" — no matching ")"');
+          } else if (frame.type === 'bracket') {
+              error('unclosed-bracket', frame.from, frame.from + 1, 'Unclosed "[" — no matching "]"');
+          } else if (frame.type === 'var') {
+              error('variable-unclosed', frame.from, frame.headEnd, 'Unclosed variable — missing "}"');
+          } else {
+              error('unclosed-brace', frame.from, frame.openEnd, 'Unclosed "{" — no matching "}"');
+          }
+      };
+
+      // Weight at the start of a variant option: "0.5::option".
+      const optionStart = (index) => {
+          const weight = matchAt(WEIGHT_RE, text, index);
+          if (weight) {
+              const from = index + weight[1].length;
+              tok('weight', from, index + weight[0].length);
+              return index + weight[0].length;
+          }
+          const bad = matchAt(BAD_WEIGHT_RE, text, index);
+          if (bad) {
+              const from = index + bad[1].length;
+              warn('weight-malformed', from, index + bad[0].length,
+                  `"${bad[2]}" is not a number — an option weight looks like 0.5::option`);
+          }
+          return index;
+      };
+
+      const wildcard = (i) => {
+          const stop = lineEnd(i);
+          let p = i + 2;
+          if (p < stop && SAMPLERS.includes(text[p])) p++;
+          const pathStart = p;
+          let pathEnd = -1;
+          let paramsFrom = -1;
+          let dynamic = false;
+          const problems = [];
+
+          let k = p;
+          while (k < stop) {
+              const c = text[k];
+              if (c === '_' && text[k + 1] === '_') {
+                  pathEnd = k;
+                  break;
+              }
+              if (c === '{' || (c === '$' && text[k + 1] === '{')) {
+                  // Variant or variable reference inside the path: skip the balanced group.
+                  dynamic = true;
+                  let depth = 0;
+                  let j = c === '$' ? k + 1 : k;
+                  for (; j < stop; j++) {
+                      if (text[j] === '{') depth++;
+                      else if (text[j] === '}' && --depth === 0) break;
+                  }
+                  if (j >= stop) {
+                      problems.push([k, k + (c === '$' ? 2 : 1), 'Unclosed "{" inside a wildcard path']);
+                      k = stop;
+                      break;
+                  }
+                  k = j + 1;
+                  continue;
+              }
+              if (c === '(') {
+                  const close = text.indexOf(')', k);
+                  if (close === -1 || close >= stop) {
+                      problems.push([k, k + 1, 'Unclosed "(" in wildcard parameters']);
+                      k++;
+                      continue;
+                  }
+                  if (paramsFrom === -1) paramsFrom = k;
+                  k = close + 1;
+                  continue;
+              }
+              if (c === '#' || c === '}' || c === '$' || c === '%') {
+                  problems.push([k, k + 1, `"${c}" is not allowed in a wildcard path`]);
+              }
+              k++;
+          }
+
+          if (pathEnd === -1) {
+              error('wildcard-unclosed', i, i + 2,
+                  'Unclosed wildcard — "__" starts a wildcard and needs a closing "__" on the same line');
+              return i + 2;
+          }
+
+          let to = pathEnd + 2;
+          const path = text.slice(pathStart, paramsFrom === -1 ? pathEnd : paramsFrom);
+
+          // Count the underscores that directly follow the closing "__".
+          let extra = 0;
+          while (to + extra < stop && text[to + extra] === '_') extra++;
+
+          let reported = false;
+          if (extra === 1) {
+              to += 1;
+              error('wildcard-underscore', i, to,
+                  'Wildcard has an extra "_" — use exactly two underscores on each side: __path__');
+              reported = true;
+          } else if (extra === 0) {
+              let cursor = to;
+              for (;;) {
+                  const dangling = matchAt(DANGLING_RE, text, cursor);
+                  if (!dangling || cursor + dangling[0].length > stop) break;
+                  cursor += dangling[0].length;
+              }
+              if (cursor !== to) {
+                  to = cursor;
+                  error('wildcard-double-underscore', i, to,
+                      'A wildcard path cannot contain "__" — use a single "_" inside the path');
+                  reported = true;
+              }
+          }
+
+          if (!reported) {
+              if (pathStart === pathEnd) {
+                  error('wildcard-empty', i, to, 'Empty wildcard — expected __path__');
+                  reported = true;
+              } else if (text[pathStart] === '_' || text[pathEnd - 1] === '_') {
+                  error('wildcard-underscore', i, to,
+                      'Wildcard has an extra "_" — use exactly two underscores on each side: __path__');
+                  reported = true;
+              }
+          }
+          for (const [from, end2, message] of problems) error('wildcard-char', from, end2, message);
+
+          tok('wildcard', i, to);
+          if (paramsFrom !== -1 && paramsFrom < pathEnd) tokens.push({from: paramsFrom, to: pathEnd, type: 'wildcardParams'});
+          if (!reported && !problems.length) {
+              wildcards.push({from: i, to, path: path.trim(), dynamic});
+          }
+          return to;
+      };
+
+      let i = start;
+      while (i < end) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          // Comments are ignored by the dynamic prompts parser.
+          if (ch === '#' || (ch === '/' && next === '/')) {
+              const j = lineEnd(i);
+              tok('comment', i, j);
+              i = j;
+              continue;
+          }
+          if (ch === '/' && next === '*') {
+              const close = text.indexOf('*/', i + 2);
+              const j = close === -1 || close + 2 > end ? end : close + 2;
+              tok('comment', i, j);
+              i = j;
+              continue;
+          }
+
+          // A1111 escapes: \( \) \[ \] are literal brackets.
+          if (ch === '\\' && i + 1 < end && '()[]\\'.includes(next)) {
+              i += 2;
+              continue;
+          }
+
+          if (ch === '<') {
+              const net = matchAt(NETWORK_RE, text, i);
+              if (net && i + net[0].length <= end) {
+                  const to = i + net[0].length;
+                  tok('lora', i, to);
+                  let u = text.indexOf('__', i);
+                  while (u !== -1 && u < to) {
+                      let stopU = u;
+                      while (stopU < to && text[stopU] === '_') stopU++;
+                      error('lora-double-underscore', u, stopU,
+                          'Double underscore inside <…> is read as a wildcard by dynamic prompts and breaks the tag');
+                      u = text.indexOf('__', stopU);
+                  }
+                  i = to;
+                  continue;
+              }
+              const open = matchAt(NETWORK_OPEN_RE, text, i);
+              if (open) {
+                  error('lora-unclosed', i, i + open[0].length, `Unclosed ${open[0]}…> tag — missing ">"`);
+                  i += open[0].length;
+                  continue;
+              }
+          }
+
+          if (ch === '$' && next === '{') {
+              const head = matchAt(VAR_HEAD_RE, text, i);
+              const name = head[2];
+              const op = head[4];
+              const headEnd = i + head[0].length;
+              const kind = op && op.includes('=') ? 'set' : 'use';
+              if (!name) {
+                  error('variable-name', i, headEnd, 'Expected a variable name after "${" (letters, digits, "_" or "-")');
+              } else if (!op && text[headEnd] !== '}' && headEnd < end) {
+                  error('variable-name', i, headEnd, 'Expected "=", ":" or "}" after the variable name');
+              }
+              if (kind === 'set' && stack.some((f) => BRACE_LIKE.has(f.type))) {
+                  error('variable-in-variant', i, headEnd,
+                      'Variable definitions must be at the top level, outside any {} block');
+              }
+              const type = kind === 'set' ? 'variableSet' : 'variableUse';
+              tok(type, i, headEnd);
+              push({type: 'var', from: i, headEnd, openEnd: headEnd, kind, name, hasDefault: op === ':', tokenType: type});
+              i = headEnd;
+              continue;
+          }
+
+          if (ch === '%' && next === '{') {
+              const frame = push({type: 'wrap', from: i, openEnd: i + 2, delims: 0});
+              tok('wrap', i, i + 2, frame.depth);
+              i += 2;
+              continue;
+          }
+
+          if (ch === '_' && next === '_') {
+              i = wildcard(i);
+              continue;
+          }
+
+          if (ch === '{') {
+              const frame = push({type: 'brace', from: i, openEnd: i + 1});
+              tok('brace', i, i + 1, frame.depth);
+              let p = i + 1;
+              while (p < end && (text[p] === ' ' || text[p] === '\t' || text[p] === '\n' || text[p] === '\r')) p++;
+              if (p < end && SAMPLERS.includes(text[p])) {
+                  tok('sampler', p, p + 1);
+                  p++;
+              }
+              const bound = matchAt(BOUND_RE, text, p);
+              if (bound) {
+                  tok('bound', p, p + bound[0].length);
+                  const range = /^(\d+)-(\d+)$/.exec(bound[1]);
+                  if (range && Number(range[1]) > Number(range[2])) {
+                      warn('bound-range', p, p + bound[1].length,
+                          `Range ${bound[1]} has a lower bound greater than the upper bound`);
+                  }
+                  p += bound[0].length;
+                  const separator = matchAt(SEPARATOR_RE, text, p);
+                  if (separator) {
+                      tok('separator', p, p + separator[0].length);
+                      p += separator[0].length;
+                  }
+              }
+              i = optionStart(p);
+              continue;
+          }
+
+          if (ch === '}') {
+              let at = -1;
+              for (let s = stack.length - 1; s >= 0; s--) {
+                  if (BRACE_LIKE.has(stack[s].type)) {
+                      at = s;
+                      break;
+                  }
+              }
+              if (at === -1) {
+                  error('unmatched-brace', i, i + 1, 'Unmatched "}" — no opening "{"');
+                  i++;
+                  continue;
+              }
+              for (let s = stack.length - 1; s > at; s--) reportUnclosed(stack[s]);
+              const frame = stack[at];
+              const depth = frame.depth;
+              stack.length = at;
+              if (frame.type === 'var') {
+                  tok(frame.tokenType, i, i + 1);
+                  if (frame.name) {
+                      variables.push({from: frame.from, to: i + 1, name: frame.name, kind: frame.kind, hasDefault: frame.hasDefault});
+                  }
+              } else if (frame.type === 'wrap') {
+                  tok('wrap', i, i + 1, depth);
+                  if (frame.delims !== 1) {
+                      error('wrap-malformed', frame.from, frame.openEnd,
+                          'Wrap command needs exactly one "$$": %{wrapper$$inner}');
+                  }
               } else {
-                  const token = rest.slice(0, i + 1);
-                  stream.pos += token.length;
-                  return token.includes("=") ? "variableSet" : "variableUse";
+                  tok('brace', i, i + 1, depth);
               }
+              blocks.push({from: frame.from, to: i + 1, depth});
+              i++;
+              continue;
+          }
+
+          if (ch === '(' || ch === '[') {
+              const type = ch === '(' ? 'paren' : 'bracket';
+              const frame = push({type, from: i});
+              tok(type, i, i + 1, frame.depth);
+              i++;
+              continue;
+          }
+
+          if (ch === ')' || ch === ']') {
+              const type = ch === ')' ? 'paren' : 'bracket';
+              let at = -1;
+              for (let s = stack.length - 1; s >= 0; s--) {
+                  if (BRACE_LIKE.has(stack[s].type)) break;
+                  if (stack[s].type === type) {
+                      at = s;
+                      break;
+                  }
+              }
+              if (at === -1) {
+                  error(`unmatched-${type}`, i, i + 1, `Unmatched "${ch}" — no opening "${ch === ')' ? '(' : '['}"`);
+                  i++;
+                  continue;
+              }
+              for (let s = stack.length - 1; s > at; s--) reportUnclosed(stack[s]);
+              const depth = stack[at].depth;
+              stack.length = at;
+              tok(type, i, i + 1, depth);
+              i++;
+              continue;
+          }
+
+          if (ch === '|') {
+              let owner = null;
+              for (let s = stack.length - 1; s >= 0; s--) {
+                  if (stack[s].type === 'paren') continue;
+                  owner = stack[s];
+                  break;
+              }
+              if (!owner || owner.type === 'var' || owner.type === 'wrap') {
+                  if (owner) {
+                      error('pipe-in-variable', i, i + 1, '"|" is not allowed here — wrap the options in {a|b}');
+                  } else {
+                      error('pipe-outside', i, i + 1, '"|" outside of {} or [] — wrap the options in {a|b}');
+                  }
+                  i++;
+                  continue;
+              }
+              tok('pipe', i, i + 1, owner.type === 'brace' ? owner.depth : undefined);
+              i = owner.type === 'brace' ? optionStart(i + 1) : i + 1;
+              continue;
+          }
+
+          if (ch === '$') {
+              if (next === '$') {
+                  let owner = null;
+                  for (let s = stack.length - 1; s >= 0; s--) {
+                      if (BRACE_LIKE.has(stack[s].type)) {
+                          owner = stack[s];
+                          break;
+                      }
+                  }
+                  if (owner && owner.type === 'wrap') {
+                      owner.delims++;
+                      tok('bound', i, i + 2);
+                  } else if (owner) {
+                      error('bound-malformed', i, i + 2,
+                          '"$$" is only valid right after "{" as a count, e.g. {2$$a|b} or {1-2$$ and $$a|b}');
+                  } else {
+                      warn('stray-dollar', i, i + 2, '"$$" outside of {} stops dynamic prompts from parsing this prompt');
+                  }
+                  i += 2;
+                  continue;
+              }
+              warn('stray-dollar', i, i + 1, 'A lone "$" stops dynamic prompts from parsing this prompt');
+              i++;
+              continue;
+          }
+
+          if (ch === '%') {
+              warn('stray-percent', i, i + 1, 'A lone "%" stops dynamic prompts from parsing this prompt');
+              i++;
+              continue;
+          }
+
+          i++;
+      }
+
+      for (let s = stack.length - 1; s >= 0; s--) reportUnclosed(stack[s]);
+
+      if (opts.checkVariables) {
+          const sets = variables.filter((v) => v.kind === 'set');
+          for (const v of variables) {
+              if (v.kind !== 'use' || v.hasDefault) continue;
+              if (sets.some((s) => s.name === v.name && s.from < v.from)) continue;
+              warn('variable-undefined', v.from, v.to,
+                  `Variable "${v.name}" is not defined before it is used — add \${${v.name}=…} or a default \${${v.name}:value}`);
+          }
+      }
+  }
+
+  function parsePrompt(input, {mode = 'prompt'} = {}) {
+      const text = String(input ?? '');
+      const out = {
+          tokens: [],
+          diagnostics: [],
+          blocks: [],
+          wildcards: [],
+          variables: [],
+          plain: new Uint8Array(text.length).fill(1),
+      };
+
+      try {
+          if (mode === 'wildcard-file') {
+              // Every line is an independent value; nothing spans lines.
+              let lineStart = 0;
+              while (lineStart <= text.length) {
+                  let lineEnd = text.indexOf('\n', lineStart);
+                  if (lineEnd === -1) lineEnd = text.length;
+                  if (lineEnd > lineStart) scan(text, lineStart, lineEnd, out, {checkVariables: false});
+                  lineStart = lineEnd + 1;
+              }
+          } else {
+              scan(text, 0, text.length, out, {checkVariables: true});
+          }
+      } catch (e) {
+          // Parsing must never break the editor; fall back to whatever was collected.
+          if (typeof console !== 'undefined') console.error('[sd-prompt-lab] prompt parser failed', e);
+      }
+
+      const plainRanges = [];
+      for (let i = 0; i < text.length; i++) {
+          if (!out.plain[i]) continue;
+          let j = i;
+          while (j < text.length && out.plain[j]) j++;
+          plainRanges.push({from: i, to: j});
+          i = j;
+      }
+
+      const byFrom = (a, b) => a.from - b.from || a.to - b.to;
+      return {
+          tokens: out.tokens.sort(byFrom),
+          diagnostics: out.diagnostics.sort(byFrom),
+          blocks: out.blocks.sort(byFrom),
+          wildcards: out.wildcards,
+          variables: out.variables.sort(byFrom),
+          text: plainRanges,
+      };
+  }
+
+  // Innermost {...} block containing the cursor (cursor between the braces), or null.
+  function innermostBlock(blocks, pos) {
+      let best = null;
+      for (const block of blocks) {
+          if (pos <= block.from || pos >= block.to) continue;
+          if (!best || block.to - block.from < best.to - best.from) best = block;
+      }
+      return best;
+  }
+
+  function globToRegExp(glob) {
+      const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*').replace(/\?/g, '.');
+      return new RegExp(`^${escaped}$`);
+  }
+
+  // Does a wildcard path resolve against the known wildcard names (posix paths, no extension)?
+  function resolveWildcard(path, names) {
+      const clean = String(path ?? '').trim();
+      if (!clean) return false;
+      if (/[*?]/.test(clean)) {
+          const re = globToRegExp(clean);
+          for (const name of names) if (re.test(name)) return true;
+          return false;
+      }
+      return names.has(clean);
+  }
+
+  // Words eligible for spell checking: letter runs inside plain text.
+  function extractWords(text, ranges) {
+      const words = [];
+      const re = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
+      for (const range of ranges) {
+          const chunk = text.slice(range.from, range.to);
+          let m;
+          re.lastIndex = 0;
+          while ((m = re.exec(chunk)) !== null) {
+              let word = m[0].replace(/'s$/i, '');
+              if (word.length < 3 || word.includes("'")) continue;   // skip contractions
+              if (word === word.toUpperCase()) continue;   // acronyms, BREAK, AND
+              words.push({from: range.from + m.index, to: range.from + m.index + word.length, text: word});
+          }
+      }
+      return words;
+  }
+
+  // CodeMirror glue for the dynamic prompts language: highlighting, error underlines,
+  // active {} block, folding and spell check. All of it is driven by one parse of the
+  // document (dp_parser.js), kept in a state field.
+
+
+  const EXTENSION_FILES = "/file/extensions/sd-prompt-lab";
+
+  // 'prompt' (whole document is one prompt) or 'wildcard-file' (one value per line).
+  const modeFacet = Facet.define({combine: (values) => values[0] || "prompt"});
+
+  // Bumps a counter so decorations that depend on externally loaded data are rebuilt.
+  const refreshEffect = StateEffect.define();
+  // Dispatched by the spell checker after it replaced its decorations (forces a redraw).
+  const spellAppliedEffect = StateEffect.define();
+
+  const parseField = StateField.define({
+      create: (state) => parsePrompt(state.doc.toString(), {mode: state.facet(modeFacet)}),
+      update: (value, tr) => (tr.docChanged
+          ? parsePrompt(tr.newDoc.toString(), {mode: tr.state.facet(modeFacet)})
+          : value),
+  });
+
+  const refreshField = StateField.define({
+      create: () => 0,
+      update: (value, tr) => (tr.effects.some((e) => e.is(refreshEffect)) ? value + 1 : value),
+  });
+
+  // ---- live views (so shared data changes can refresh every open editor) -------------
+
+  const liveViews = new Set();
+
+  const trackView = ViewPlugin.fromClass(class {
+      constructor(view) {
+          this.view = view;
+          liveViews.add(view);
+      }
+
+      destroy() {
+          liveViews.delete(this.view);
+      }
+  });
+
+  function refreshAllViews() {
+      for (const view of liveViews) {
+          view.dispatch({effects: refreshEffect.of(null)});
+      }
+  }
+
+  // ---- shared data: common/unwanted prompts, wildcard names, settings ----------------
+
+  const lists = {common: new Set(), unwanted: new Set(), loaded: false};
+
+  async function fetchLines(path) {
+      const response = await fetch(`${EXTENSION_FILES}/${path}?v=${Date.now()}`);
+      if (!response.ok) throw new Error(`Failed to load ${path}`);
+      return (await response.text())
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith("#"));
+  }
+
+  async function loadPromptLists() {
+      if (lists.loaded) return;
+      lists.loaded = true;
+      try {
+          lists.common = new Set(await fetchLines("common_prompts.txt"));
+      } catch (err) {
+          console.error("Could not load common_prompts.txt:", err);
+      }
+      try {
+          lists.unwanted = new Set(await fetchLines("unwanted_prompts.txt"));
+      } catch (err) {
+          console.error("Could not load unwanted_prompts.txt:", err);
+      }
+      refreshAllViews();
+  }
+
+  const wildcardNames = {ready: false, names: new Set(), requested: false};
+
+  async function loadWildcardNames() {
+      try {
+          const response = await fetch("/sd-prompt-lab/wildcards/names");
+          if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+          const data = await response.json();
+          wildcardNames.names = new Set(data.names || []);
+          // Without a complete list a "missing file" warning could be wrong, so stay quiet.
+          wildcardNames.ready = !!(data.exists && data.complete);
+      } catch (err) {
+          wildcardNames.ready = false;
+          console.warn("[sd-prompt-lab] wildcard file check disabled:", err);
+      }
+      refreshAllViews();
+  }
+
+  function ensureWildcardNames() {
+      if (wildcardNames.requested) return;
+      wildcardNames.requested = true;
+      loadWildcardNames();
+      window.addEventListener("sd-prompt-lab:wildcards-changed", loadWildcardNames);
+  }
+
+  const spell = {
+      enabled: true,
+      settingsRequested: false,
+      dictionary: null,          // Set of known lower-case words, once loaded
+      dictionaryPromise: null,
+      failed: false,
+      verdicts: new Map(),       // word -> true (known) | false (misspelled), from the server
+  };
+
+  function ensureSpellSettings() {
+      if (spell.settingsRequested) return;
+      spell.settingsRequested = true;
+      fetch("/sd-prompt-lab/settings")
+          .then((response) => (response.ok ? response.json() : {}))
+          .then((settings) => {
+              spell.enabled = settings.spell_check !== false;
+              refreshAllViews();
+          })
+          .catch(() => {});
+      window.addEventListener("sd-prompt-lab:settings-changed", (event) => {
+          spell.enabled = event.detail?.spell_check !== false;
+          refreshAllViews();
+      });
+  }
+
+  function ensureDictionary() {
+      if (!spell.dictionaryPromise) {
+          spell.dictionaryPromise = Promise.all([
+              fetchLines("editor/dict/en-words.txt"),
+              fetchLines("editor/dict/extra-words.txt"),
+          ]).then(([english, extra]) => {
+              spell.dictionary = new Set(english);
+              for (const word of extra) spell.dictionary.add(word.toLowerCase());
+          }).catch((err) => {
+              spell.failed = true;
+              console.warn("[sd-prompt-lab] spell check disabled:", err);
+          });
+      }
+      return spell.dictionaryPromise;
+  }
+
+  // Words the English list does not know get a second opinion from the server (tag
+  // datasets and saved autocompletion prompts). Verdicts are cached for the session.
+  async function resolveUnknownWords(words) {
+      const pending = words.filter((word) => !spell.verdicts.has(word));
+      if (!pending.length) return;
+      const response = await fetch("/sd-prompt-lab/spell/check", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({words: pending}),
+      });
+      if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+      const unknown = new Set((await response.json()).unknown || []);
+      for (const word of pending) spell.verdicts.set(word, !unknown.has(word));
+  }
+
+  // ---- highlighting ------------------------------------------------------------------
+
+  const markCache = new Map();
+
+  function mark(className) {
+      let deco = markCache.get(className);
+      if (!deco) {
+          deco = Decoration.mark({class: className});
+          markCache.set(className, deco);
+      }
+      return deco;
+  }
+
+  function listDecorations(state, result, ranges) {
+      if (!lists.common.size && !lists.unwanted.size) return;
+      const doc = state.doc.toString();
+      for (const range of result.text) {
+          const chunk = doc.slice(range.from, range.to);
+          const re = /[^,\n]+/g;
+          let m;
+          while ((m = re.exec(chunk)) !== null) {
+              const raw = m[0];
+              const lead = raw.length - raw.trimStart().length;
+              // "(masterpiece:1.2)" leaves "masterpiece:1.2" as plain text: ignore the weight.
+              const word = raw.trim().replace(/:\s*-?\d*\.?\d+$/, "").trim();
+              if (!word) continue;
+              const cls = lists.unwanted.has(word) ? "spl-tok-unwanted"
+                  : lists.common.has(word) ? "spl-tok-common" : null;
+              if (!cls) continue;
+              const from = range.from + m.index + lead;
+              ranges.push(mark(cls).range(from, from + word.length));
+          }
+      }
+  }
+
+  const highlightDecorations = EditorView.decorations.compute([parseField, refreshField], (state) => {
+      const result = state.field(parseField);
+      const length = state.doc.length;
+      const ranges = [];
+      for (const token of result.tokens) {
+          if (token.from >= token.to || token.to > length) continue;
+          const cls = token.depth ? `spl-tok-${token.type} spl-depth-${token.depth}` : `spl-tok-${token.type}`;
+          ranges.push(mark(cls).range(token.from, token.to));
+      }
+      if (state.facet(modeFacet) === "prompt") listDecorations(state, result, ranges);
+      return Decoration.set(ranges, true);
+  });
+
+  // ---- active {} block ----------------------------------------------------------------
+
+  const activeBlockMark = Decoration.mark({class: "spl-active-block"});
+
+  const activeBlockDecorations = EditorView.decorations.compute(["selection", parseField], (state) => {
+      const block = innermostBlock(state.field(parseField).blocks, state.selection.main.head);
+      if (!block || block.to > state.doc.length) return Decoration.none;
+      return Decoration.set([activeBlockMark.range(block.from, block.to)]);
+  });
+
+  // ---- folding: multi-line {} blocks -------------------------------------------------
+
+  const blockFolding = foldService.of((state, lineStart, lineEnd) => {
+      let best = null;
+      for (const block of state.field(parseField).blocks) {
+          if (block.from < lineStart || block.from > lineEnd || block.to - 1 <= lineEnd) continue;
+          if (!best || block.from < best.from) best = block;
+      }
+      return best ? {from: lineEnd, to: best.to - 1} : null;
+  });
+
+  // ---- linting -----------------------------------------------------------------------
+
+  function lintSource(view) {
+      const state = view.state;
+      const result = state.field(parseField);
+      const length = state.doc.length;
+      const diagnostics = [];
+      const push = (from, to, severity, message) => {
+          from = Math.min(from, length);
+          to = Math.min(Math.max(to, from), length);
+          diagnostics.push({from, to, severity, message, source: "Prompt Lab"});
+      };
+
+      for (const d of result.diagnostics) push(d.from, d.to, d.severity, d.message);
+
+      if (wildcardNames.ready) {
+          for (const wildcard of result.wildcards) {
+              if (wildcard.dynamic || resolveWildcard(wildcard.path, wildcardNames.names)) continue;
+              push(wildcard.from, wildcard.to, "warning",
+                  `No wildcard file matches "${wildcard.path}"`);
+          }
+      }
+      return diagnostics;
+  }
+
+  // ---- spell check -------------------------------------------------------------------
+
+  const misspelledMark = Decoration.mark({class: "spl-misspelled"});
+
+  const spellChecker = ViewPlugin.fromClass(class {
+      constructor(view) {
+          this.view = view;
+          this.decorations = Decoration.none;
+          this.timer = null;
+          this.destroyed = false;
+          this.schedule(600);
+      }
+
+      update(update) {
+          if (update.docChanged) {
+              this.decorations = this.decorations.map(update.changes);
+              this.schedule(400);
+          } else if (update.transactions.some((tr) => tr.effects.some((e) => e.is(refreshEffect)))) {
+              this.schedule(0);
           }
       }
 
-      stream.pos = stream.string.length;
-      return "unmatched";
-  }
-
-  function tryWildcardToken(stream, state) {
-      const variableToken = consumeVariableToken(stream);
-      if (variableToken) return variableToken;
-
-      const rest = stream.string.slice(stream.pos);
-
-      if (stream.match(/^__[^_\n]+?__/)) {
-          return "wildcardLink";
+      schedule(delay) {
+          clearTimeout(this.timer);
+          this.timer = setTimeout(() => this.run().catch((err) => {
+              spell.failed = true;
+              console.warn("[sd-prompt-lab] spell check disabled:", err);
+          }), delay);
       }
 
-      const weightModifier = rest.match(/^\(:-?\d+(?:\.\d+)?\)/);
-      if (weightModifier) {
-          stream.pos += weightModifier[0].length;
-          return "wildcardWeight";
+      apply(decorations) {
+          if (this.destroyed) return;
+          this.decorations = decorations;
+          this.view.dispatch({effects: spellAppliedEffect.of(null)});
       }
 
-      if (state.braceDepth > 0 && stream.match(/^-?\d+(?:\.\d+)?::/)) {
-          return "wildcardWeight";
+      async run() {
+          if (this.destroyed) return;
+          if (!spell.enabled || spell.failed) {
+              if (this.decorations.size) this.apply(Decoration.none);
+              return;
+          }
+          await ensureDictionary();
+          if (this.destroyed || !spell.dictionary) return;
+
+          const state = this.view.state;
+          const text = state.doc.toString();
+          const words = extractWords(text, state.field(parseField).text)
+              .map((word) => ({...word, key: word.text.toLowerCase()}))
+              .filter((word) => !spell.dictionary.has(word.key));
+
+          await resolveUnknownWords([...new Set(words.map((word) => word.key))]);
+          // The document changed while waiting; a newer run is already scheduled.
+          if (this.destroyed || this.view.state.doc !== state.doc) return;
+
+          const ranges = words
+              .filter((word) => spell.verdicts.get(word.key) === false)
+              .map((word) => misspelledMark.range(word.from, word.to));
+          this.apply(Decoration.set(ranges, true));
       }
 
-      if (state.braceDepth > 0 && stream.match(/^\d+\$\$/)) {
-          return "wildcardPick";
+      destroy() {
+          this.destroyed = true;
+          clearTimeout(this.timer);
       }
-
-      if (state.braceDepth > 0 && stream.match(/^[^|{}$]*\$\$/)) {
-          return "wildcardSeparator";
-      }
-
-      if (stream.match("{")) {
-          if (!stream.string.slice(stream.pos).includes("}")) return "unmatched";
-          state.braceDepth++;
-          return `brace${Math.min(state.braceDepth, 5)}`;
-      }
-      if (stream.match("}")) {
-          if (state.braceDepth === 0) return "unmatched";
-          const depth = state.braceDepth;
-          state.braceDepth--;
-          return `brace${Math.min(depth, 5)}`;
-      }
-      if (stream.match("(")) {
-          if (!stream.string.slice(stream.pos).includes(")")) return "unmatched";
-          state.parenDepth++;
-          return `paren${Math.min(state.parenDepth, 5)}`;
-      }
-      if (stream.match(")")) {
-          if (state.parenDepth === 0) return "unmatched";
-          const depth = state.parenDepth;
-          state.parenDepth--;
-          return `paren${Math.min(depth, 5)}`;
-      }
-
-      if (stream.match("|")) {
-          return "wildcardPipe";
-      }
-
-      return null;
-  }
-
-  const wildcardLanguage = StreamLanguage.define({
-      startState: () => ({
-          braceDepth: 0,
-          parenDepth: 0
-      }),
-      token: (stream, state) => {
-          if (stream.eatSpace()) return null;
-
-          const wildcardToken = tryWildcardToken(stream, state);
-          if (wildcardToken) return wildcardToken;
-
-          stream.next();
-          return null;
-      },
-      tokenTable: wildcardTags,
-      blankLine: (state) => {
-          state.braceDepth = 0;
-          state.parenDepth = 0;
-      },
+  }, {
+      decorations: (plugin) => plugin.decorations,
   });
+
+  // ---- public ------------------------------------------------------------------------
+
+  // Language support for a prompt editor.
+  //   mode         'prompt' | 'wildcard-file'
+  //   lint         show error/warning underlines (and hover messages)
+  //   gutter       show the lint marker gutter
+  //   activeBlock  highlight the {} block around the cursor
+  //   spellCheck   underline misspelled words (also needs the Settings switch on)
+  function promptLanguage({
+      mode = "prompt",
+      lint = true,
+      gutter = true,
+      activeBlock = true,
+      spellCheck = false,
+  } = {}) {
+      const extensions = [
+          modeFacet.of(mode),
+          parseField,
+          refreshField,
+          trackView,
+          highlightDecorations,
+          blockFolding,
+          // Only pair brackets: auto-closing quotes gets in the way of prose like "it's".
+          EditorState.languageData.of(() => [{closeBrackets: {brackets: ["(", "[", "{"]}}]),
+      ];
+      if (activeBlock) extensions.push(activeBlockDecorations);
+      if (lint) {
+          ensureWildcardNames();
+          extensions.push(linter(lintSource, {
+              delay: 200,
+              // Re-lint when shared data (e.g. the wildcard file list) changes.
+              needsRefresh: (update) => update.transactions.some(
+                  (tr) => tr.effects.some((e) => e.is(refreshEffect))),
+          }));
+          if (gutter) extensions.push(lintGutter());
+      }
+      if (spellCheck) {
+          ensureSpellSettings();
+          extensions.push(spellChecker);
+      }
+      return extensions;
+  }
 
   function promptWordsAutocomplete(context) {
       let word = context.matchBefore(/\w+/);
@@ -25192,91 +26480,8 @@
           });
   }
 
-  async function loadPredefinedPrompts() {
-      try {
-          const response = await fetch(`/file/extensions/sd-prompt-lab/common_prompts.txt?v=${Date.now()}`);
-          if (!response.ok) throw new Error("Failed to load prompts");
-
-          const text = await response.text();
-
-          // Split lines, trim, and filter empty ones
-          commonPrompts = text
-              .split(/\r?\n/)
-              .map(line => line.trim())
-              .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
-      } catch (err) {
-          console.error("Could not load common_prompts.txt:", err);
-      }
-
-      try {
-          const response = await fetch(`/file/extensions/sd-prompt-lab/unwanted_prompts.txt?v=${Date.now()}`);
-          if (!response.ok) throw new Error("Failed to load prompts");
-
-          const text = await response.text();
-
-          // Split lines, trim, and filter empty ones
-          unwantedPrompts = text
-              .split(/\r?\n/)
-              .map(line => line.trim())
-              .filter(line => line && !line.startsWith('#')); // ignore empty lines and comments
-      } catch (err) {
-          console.error("Could not load unwanted_prompts.txt:", err);
-      }
-  }
-
-  window.initCodeMirror6 = (selector) => {
-      const textarea = document.querySelector(selector);
-      if (!textarea) return;
-
-      loadPredefinedPrompts();
-
-      textarea.style.display = "none";
-
-      const view = new EditorView({
-          state: EditorState.create({
-              doc: textarea.value,
-              extensions: [
-                  oneDark,
-                  EditorView.lineWrapping,
-                  lineNumbers(),
-                  foldGutter(),
-                  highlightSpecialChars(),
-                  history(),
-                  drawSelection(),
-                  dropCursor(),
-                  EditorState.allowMultipleSelections.of(true),
-                  indentOnInput(),
-                  customLanguage,
-                  syntaxHighlighting(classHighlighter),
-                  bracketMatching(),
-                  closeBrackets(),
-                  autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
-                  rectangularSelection(),
-                  crosshairCursor(),
-                  highlightActiveLine(),
-                  highlightActiveLineGutter(),
-                  highlightSelectionMatches(),
-                  keymap.of([
-                      indentWithTab,
-                      ...closeBracketsKeymap,
-                      ...defaultKeymap,
-                      ...searchKeymap,
-                      ...historyKeymap,
-                      ...foldKeymap,
-                      ...completionKeymap
-                  ])
-              ]
-          }),
-          parent: textarea.parentNode
-      });
-
-      view.dom.style.height = "600px"; // 40 * 15px line height approx
-      view.dom.style.overflow = "auto"; // Optional: scroll inside view
-
-      window.sdPromptLabEditor = view;
-  };
-
-  function wildcardEditorExtensions(onChange) {
+  // Shared editor setup. `language` is the promptLanguage() configuration for this editor.
+  function editorExtensions({language, onChange} = {}) {
       return [
           oneDark,
           EditorView.lineWrapping,
@@ -25287,9 +26492,7 @@
           drawSelection(),
           dropCursor(),
           EditorState.allowMultipleSelections.of(true),
-          indentOnInput(),
-          wildcardLanguage,
-          syntaxHighlighting(classHighlighter),
+          promptLanguage(language),
           bracketMatching(),
           closeBrackets(),
           autocompletion({override: [promptWordsAutocomplete], activateOnTyping: true}),
@@ -25310,24 +26513,54 @@
               ...searchKeymap,
               ...historyKeymap,
               ...foldKeymap,
-              ...completionKeymap
+              ...completionKeymap,
+              ...lintKeymap
           ])
       ];
   }
 
-  // A standalone editor state (own document, undo history and selection). The Wildcard
-  // Editor keeps one per open file and swaps them into its single view with setState().
-  window.createSdPromptLabEditorState = ({doc = "", onChange} = {}) => {
-      return EditorState.create({doc, extensions: wildcardEditorExtensions(onChange)});
-  };
+  // Create tab editor.
+  window.initCodeMirror6 = (selector) => {
+      const textarea = document.querySelector(selector);
+      if (!textarea) return;
 
-  window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange} = {}) => {
-      if (!parent) return null;
+      loadPromptLists();
 
-      loadPredefinedPrompts();
+      textarea.style.display = "none";
 
       const view = new EditorView({
-          state: window.createSdPromptLabEditorState({doc, onChange}),
+          state: EditorState.create({
+              doc: textarea.value,
+              extensions: editorExtensions({language: {mode: "prompt", spellCheck: true}})
+          }),
+          parent: textarea.parentNode
+      });
+
+      view.dom.classList.add("sd-prompt-lab-create-codemirror");
+      view.dom.style.height = "600px"; // 40 * 15px line height approx
+      view.dom.style.overflow = "auto"; // Optional: scroll inside view
+
+      window.sdPromptLabEditor = view;
+  };
+
+  // A standalone editor state (own document, undo history and selection). The Wildcard
+  // Editor keeps one per open file and swaps them into its single view with setState().
+  //   mode        'wildcard-file' (one value per line, default) | 'prompt'
+  //   spellCheck  underline misspelled words (default on)
+  window.createSdPromptLabEditorState = ({doc = "", onChange, mode = "wildcard-file", spellCheck = true} = {}) => {
+      return EditorState.create({
+          doc,
+          extensions: editorExtensions({language: {mode, spellCheck}, onChange})
+      });
+  };
+
+  window.createSdPromptLabWildcardEditor = ({parent, doc = "", onChange, mode, spellCheck} = {}) => {
+      if (!parent) return null;
+
+      loadPromptLists();
+
+      const view = new EditorView({
+          state: window.createSdPromptLabEditorState({doc, onChange, mode, spellCheck}),
           parent
       });
 
@@ -25339,7 +26572,7 @@
   window.createSdPromptLabReadOnlyView = ({parent, doc = ""} = {}) => {
       if (!parent) return null;
 
-      loadPredefinedPrompts();
+      loadPromptLists();
 
       const view = new EditorView({
           state: EditorState.create({
@@ -25350,8 +26583,7 @@
                   EditorState.readOnly.of(true),
                   EditorView.editable.of(false),
                   highlightSpecialChars(),
-                  customLanguage,
-                  syntaxHighlighting(classHighlighter)
+                  promptLanguage({mode: "prompt", gutter: false, activeBlock: false, spellCheck: false})
               ]
           }),
           parent
