@@ -737,9 +737,11 @@
     line-height: 1.55;
 }
 
+/* Text layers stay transparent: CodeMirror draws the selection in a layer behind them,
+   so an opaque background here would hide it. */
 .sd-prompt-lab-wildcard-codemirror .cm-content,
 .sd-prompt-lab-wildcard-codemirror .cm-line {
-    background: #1F2937 !important;
+    background: transparent !important;
 }
 
 .sd-prompt-lab-wildcard-codemirror .cm-content {
@@ -752,7 +754,10 @@
     border-right: 1px solid var(--spl-line);
 }
 
-.sd-prompt-lab-wildcard-codemirror .cm-activeLine,
+.sd-prompt-lab-wildcard-codemirror .cm-activeLine {
+    background: transparent !important;
+}
+
 .sd-prompt-lab-wildcard-codemirror .cm-activeLineGutter {
     background: #1F2937 !important;
 }
