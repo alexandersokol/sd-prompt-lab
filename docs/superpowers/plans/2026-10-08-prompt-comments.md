@@ -593,8 +593,10 @@ In `sample_prompt` (`sd_prompt_lab_sampler.py`) add `from . import sd_prompt_lab
 
 Start the WebUI in debug mode (command in the memory note `verify-ui-in-real-webui`), then:
 
-Run: `curl -s localhost:3000/sdapi/v1/scripts | python3 -c "import json,sys; d=json.load(sys.stdin); print('prompt lab comments' in d['txt2img'], 'prompt lab comments' in d['img2img'])"`
-Expected: `True True`, and no `Error loading script` line for `sd_prompt_lab_comments_script.py` in the WebUI log.
+Start it with `--api` added. A script without UI controls is not listed by `/sdapi/v1/scripts`, so ask for it by name instead:
+
+Run: `curl -s -X POST localhost:3000/sdapi/v1/txt2img -H 'Content-Type: application/json' -d '{"prompt":"a","steps":1,"alwayson_scripts":{"prompt lab comments":{"args":[]}}}'`
+Expected: anything except `Script 'prompt lab comments' not found` (without a checkpoint it fails later with `No checkpoints found`), and no `Error loading script` line for `sd_prompt_lab_comments_script.py` in the WebUI log.
 
 Run: `curl -s localhost:3000/sd-prompt-lab/settings`
 Expected: JSON containing `"prompt_comments": true`.
