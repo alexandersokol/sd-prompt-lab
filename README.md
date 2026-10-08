@@ -18,7 +18,9 @@
 
 - **Wildcard Editor**: Browse, search (by name or file content) and edit your wildcard files in a tabbed editor. *Note*: This feature requires the [Dynamic Prompts](https://github.com/adieyal/sd-dynamic-prompts) extension to be installed, and wildcards files added.
 
-- **Settings**: Manage the saved autocompletion prompts and switch spell checking on or off.
+- **Prompt comments**: Keep notes in a prompt without affecting the image, and write your own entries to the image metadata. See [Prompt comments](#prompt-comments).
+
+- **Settings**: Manage the saved autocompletion prompts and switch spell checking and prompt comments on or off.
 
 - **Image Handling in 'Create' Tab**:
   - **Local Images**: Browse and select images from your local storage.
@@ -49,6 +51,42 @@
 - **Managing Prompts**: Save your frequently used prompts for quick access. Organize them as needed for different projects or themes.
 
 - **Wildcards**: If the Dynamic Prompts extension is enabled, the Wildcards tab will allow you to browse and manage your wildcard files and directories.
+
+## Prompt comments
+
+Two kinds of comment can be written in the positive or negative prompt of txt2img and img2img:
+
+| Syntax | Used for generation | In the image metadata |
+|---|---|---|
+| `/* any note */` | no | stays in the prompt text |
+| `/*@ Name: value */` | no | moved to the parameter line, next to Steps, Sampler, … |
+
+For example, generating with
+
+```
+1girl, {red|blue} dress, /* outfit test */ /*@ Mood: calm */
+```
+
+is the same as generating with `1girl, {red|blue} dress,` and saves this metadata:
+
+```
+1girl, red dress, /* outfit test */
+Steps: 20, Sampler: Euler a, …, Mood: calm
+```
+
+- A param name may contain letters, digits, `_` and spaces. Names the WebUI or Dynamic Prompts write themselves (`Steps`, `Seed`, `Template`, …) are reserved: such a comment is kept as a plain note and a warning is shown under the image.
+- If a name is set more than once in a prompt, the last one wins.
+- Nothing inside a comment is expanded by Dynamic Prompts, so any character is safe.
+- A `/*` without a closing `*/` is not a comment; the editor warns about it.
+- When a saved prompt is sent to txt2img or copied from Prompt Lab, `/*@ Prompt name: <name> */` is added, so the image records which template it came from. It is not stored in the saved prompt.
+- The feature can be switched off in the Prompt Lab Settings tab.
+
+Limits:
+
+- Comments that come from wildcard files or saved WebUI styles are inserted after the protection runs, so `# $ % { }` and `__` inside them are still read by Dynamic Prompts. The Wildcard Editor warns about these.
+- The txt2img token counter also counts comment text.
+- Extensions that encode the prompt again in a pass of their own may still see plain notes.
+- If params differ between the images of one run, the grid image carries those of the last image.
 
 ## Notes
 

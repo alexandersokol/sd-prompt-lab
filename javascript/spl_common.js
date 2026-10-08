@@ -247,6 +247,29 @@
         });
     }
 
+    // ---- prompt name param ---------------------------------------------------------
+    // Sending or copying a saved prompt adds /*@ Prompt name: … */, which the comments
+    // script moves to the image metadata. It is never stored in the saved prompt.
+
+    let promptComments = true;
+    fetch('/sd-prompt-lab/settings')
+        .then((res) => (res.ok ? res.json() : {}))
+        .then((settings) => {
+            promptComments = settings.prompt_comments !== false;
+        })
+        .catch(() => {});
+    window.addEventListener('sd-prompt-lab:settings-changed', (event) => {
+        promptComments = event.detail?.prompt_comments !== false;
+    });
+
+    function withPromptName(prompt, name) {
+        const text = String(prompt ?? '');
+        const clean = String(name ?? '').replace(/\s+/g, ' ').replace(/\*\//g, '* /').trim();
+        if (!promptComments || !clean || !text.trim()) return text;
+        if (/\/\*@\s*prompt name\s*:/i.test(text)) return text;   // the author already set one
+        return `${text.replace(/\s+$/, '')}\n/*@ Prompt name: ${clean} */`;
+    }
+
     window.spl = {
         escapeHtml,
         copyToClipboard,
@@ -259,6 +282,7 @@
         openTxt2Img,
         toast,
         confirm: confirmDialog,
+        withPromptName,
     };
 
     // Older name, still used by the bundle's consumers.

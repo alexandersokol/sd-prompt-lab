@@ -21,6 +21,7 @@
         list: 'spl-set-words-list',
         spellCheck: 'spl-set-spell-check',
         tagUnderscores: 'spl-set-tag-underscores',
+        promptComments: 'spl-set-prompt-comments',
         importButton: 'spl-set-import',
         importFile: 'spl-set-import-file',
         importConflict: 'spl-set-import-conflict',
@@ -224,6 +225,8 @@
         if (spell) spell.checked = settings.spell_check !== false;
         const underscores = $(ids.tagUnderscores);
         if (underscores) underscores.checked = settings.tag_underscores === true;
+        const comments = $(ids.promptComments);
+        if (comments) comments.checked = settings.prompt_comments !== false;
     }
 
     async function saveSetting(key, value) {
@@ -305,6 +308,13 @@
 
         $(ids.tagUnderscores)?.addEventListener('change', (e) => {
             saveSetting('tag_underscores', e.target.checked).catch((err) => {
+                e.target.checked = !e.target.checked;
+                setStatus(err.message, 'error');
+            });
+        });
+
+        $(ids.promptComments)?.addEventListener('change', (e) => {
+            saveSetting('prompt_comments', e.target.checked).catch((err) => {
                 e.target.checked = !e.target.checked;
                 setStatus(err.message, 'error');
             });

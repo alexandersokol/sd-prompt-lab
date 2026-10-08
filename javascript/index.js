@@ -177,13 +177,25 @@ function updateTxt2ImgPositivePrompt(codeContent) {
     window.spl.openTxt2Img();
 }
 
-function sendCreatePromptToTxt2Img() {
+async function sendCreatePromptToTxt2Img() {
     const prompt = window.sdPromptLabEditor?.state.doc.toString().trim();
     if (!prompt) {
         window.spl.toast('The prompt is empty', 'warn');
         return;
     }
-    updateTxt2ImgPositivePrompt(prompt);
+    // Only a name that belongs to a saved prompt is added.
+    let name = '';
+    const typed = readCreateFields().name.trim();
+    if (typed) {
+        try {
+            const res = await fetch(`/sd-prompt-lab/exists?name=${encodeURIComponent(typed)}`);
+            const data = res.ok ? await res.json() : {};
+            if (data.exists) name = data.name;
+        } catch (e) {
+            // Not reachable: send the prompt without a name.
+        }
+    }
+    updateTxt2ImgPositivePrompt(window.spl.withPromptName(prompt, name));
 }
 
 // Reformat / Clean Up are syntax-aware (editor/dp_format.js): they never touch comments,

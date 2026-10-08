@@ -151,7 +151,7 @@ def parse_prompts(raw_prompt: str) -> list:
     """
     text = raw_prompt or ""
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
-    text = re.sub(r"(?m)(#|//).*$", " ", text)
+    text = re.sub(r"(?m)#.*$", " ", text)
     text = re.sub(r"<[^<>\n]*>", ",", text)
     text = _strip_variables(text)
     text = _WILDCARD_RE.sub(",", text)

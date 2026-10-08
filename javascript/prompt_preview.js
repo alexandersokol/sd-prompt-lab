@@ -78,7 +78,7 @@
                 close();
             } else if (action === 'copy' && current) {
                 const label = backdrop.querySelector('.spl-preview-copy-label');
-                label.textContent = copyToClipboard(current.prompt || '') ? 'Copied!' : 'Copy failed';
+                label.textContent = copyToClipboard(window.spl.withPromptName(current.prompt || '', current.id ? current.name : '')) ? 'Copied!' : 'Copy failed';
                 setTimeout(() => {
                     label.textContent = 'Copy';
                 }, 1500);

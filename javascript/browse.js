@@ -171,9 +171,9 @@
         if (action === 'preview') {
             window.sdPromptLabShowPreview?.(prompt);
         } else if (action === 'txt2img') {
-            updateTxt2ImgPositivePrompt(prompt.prompt || '');
+            updateTxt2ImgPositivePrompt(window.spl.withPromptName(prompt.prompt || '', prompt.name));
         } else if (action === 'copy') {
-            const ok = await window.spl.copyToClipboard(prompt.prompt || '');
+            const ok = await window.spl.copyToClipboard(window.spl.withPromptName(prompt.prompt || '', prompt.name));
             window.spl.toast(ok ? 'Prompt copied' : 'Failed to copy', ok ? 'ok' : 'error');
         } else if (action === 'edit') {
             await editPrompt(prompt);

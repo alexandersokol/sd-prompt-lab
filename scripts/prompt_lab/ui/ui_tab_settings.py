@@ -65,6 +65,23 @@ def ui_tab_settings():
 
                 <div class="spl-set-row">
                     <div class="spl-set-row-text">
+                        <div class="spl-set-row-title">Prompt comments</div>
+                        <div class="spl-set-row-desc">
+                            <code>/* note */</code> stays in the image metadata but is not used
+                            for generation. <code>/*@ Name: value */</code> is moved to the
+                            metadata parameters. Off: both are sent to generation as text.
+                        </div>
+                    </div>
+                    <label class="spl-set-switch">
+                        <input id="spl-set-prompt-comments" type="checkbox">
+                        <span class="spl-set-switch-track" aria-hidden="true">
+                            <span class="spl-set-switch-knob"></span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="spl-set-row">
+                    <div class="spl-set-row-text">
                         <div class="spl-set-row-title">Clean autocompletion prompts</div>
                         <div class="spl-set-row-desc">
                             Remove every saved autocompletion prompt. Saved prompts in
