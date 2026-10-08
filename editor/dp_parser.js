@@ -28,13 +28,28 @@ const DANGLING_RE = /[^\s,|{}()[\]<>_][^\s,|{}()[\]<>]*?__/y;
 
 const BRACE_LIKE = new Set(['brace', 'var', 'wrap']);
 
+// Names the WebUI and Dynamic Prompts write to the image metadata themselves. Keep in
+// sync with RESERVED in scripts/prompt_lab/sd_prompt_lab_comments.py.
+const RESERVED_PARAMS = new Set([
+    'steps', 'sampler', 'cfg scale', 'image cfg scale', 'seed', 'face restoration', 'size',
+    'model hash', 'model', 'vae hash', 'vae', 'variation seed', 'variation seed strength',
+    'seed resize from', 'denoising strength', 'conditional mask weight', 'clip skip', 'ensd',
+    'token merging ratio', 'token merging ratio hr', 'init image hash', 'rng', 'ngms', 'tiling',
+    'version', 'user', 'prompt', 'negative prompt', 'hires prompt', 'hires negative prompt',
+    'hires upscale', 'hires steps', 'hires upscaler', 'hires resize', 'hires sampler',
+    'hires checkpoint', 'refiner', 'refiner switch at', 'vae decoder', 'vae encoder',
+    'template', 'negative template',
+]);
+const PARAM_NAME_RE = /^[\p{L}\p{N}_ ]+$/u;
+const UNSAFE_IN_WILDCARD_COMMENT_RE = /[#$%{}]|__/;
+
 function matchAt(re, text, index) {
     re.lastIndex = index;
     return re.exec(text);
 }
 
 function scan(text, start, end, out, opts) {
-    const {tokens, diagnostics, blocks, wildcards, variables, plain} = out;
+    const {tokens, diagnostics, blocks, wildcards, variables, plain, params} = out;
     const stack = [];
 
     const tok = (type, from, to, depth) => {
@@ -63,6 +78,30 @@ function scan(text, start, end, out, opts) {
         frame.depth = nextDepth(frame.type);
         stack.push(frame);
         return frame;
+    };
+
+    const paramComment = (from, to) => {
+        tok('param', from, to);
+        const body = text.slice(from + 3, to - 2);
+        const colon = body.indexOf(':');
+        const rawName = colon === -1 ? '' : body.slice(0, colon);
+        const name = rawName.replace(/\s+/g, ' ').trim();
+        const value = colon === -1 ? '' : body.slice(colon + 1).replace(/\s+/g, ' ').trim();
+        if (!name || !value || !PARAM_NAME_RE.test(name)) {
+            warn('param-invalid', from, to, 'Not a "/*@ Name: value */" param (letters, digits, _ and spaces in the name) — kept as a plain comment');
+            return;
+        }
+        const nameFrom = from + 3 + rawName.length - rawName.trimStart().length;
+        const nameTo = nameFrom + rawName.trim().length;
+        tok('paramName', nameFrom, nameTo);
+        if (RESERVED_PARAMS.has(name.toLowerCase())) {
+            warn('param-reserved', nameFrom, nameTo, `"${name}" is written by the WebUI itself — kept as a plain comment`);
+            return;
+        }
+        if (params.some((p) => p.name === name)) {
+            warn('param-duplicate', nameFrom, nameTo, `"${name}" is set more than once — the last one wins`);
+        }
+        params.push({from, to, name, value});
     };
 
     const reportUnclosed = (frame) => {
@@ -204,17 +243,28 @@ function scan(text, start, end, out, opts) {
         const ch = text[i];
         const next = text[i + 1];
 
-        // Comments are ignored by the dynamic prompts parser.
-        if (ch === '#' || (ch === '/' && next === '/')) {
+        // "#" starts a Dynamic Prompts comment: the rest of the line never reaches the WebUI.
+        if (ch === '#') {
             const j = lineEnd(i);
             tok('comment', i, j);
             i = j;
             continue;
         }
+        // /* note */ and /*@ Name: value */ are Prompt Lab comments (see
+        // sd_prompt_lab_comments.py). Unclosed, "/*" is plain text.
         if (ch === '/' && next === '*') {
             const close = text.indexOf('*/', i + 2);
-            const j = close === -1 || close + 2 > end ? end : close + 2;
-            tok('comment', i, j);
+            if (close === -1 || close + 2 > end) {
+                warn('comment-unclosed', i, i + 2, 'Comment is not closed with "*/" — this text is sent to generation');
+                i += 2;
+                continue;
+            }
+            const j = close + 2;
+            if (text[i + 2] === '@') paramComment(i, j);
+            else tok('comment', i, j);
+            if (opts.wildcardFile && UNSAFE_IN_WILDCARD_COMMENT_RE.test(text.slice(i + 2, close))) {
+                warn('comment-unsafe', i, j, 'In a wildcard file, # $ % { } and __ inside a comment are still read by Dynamic Prompts');
+            }
             i = j;
             continue;
         }
@@ -455,6 +505,7 @@ export function parsePrompt(input, {mode = 'prompt'} = {}) {
         blocks: [],
         wildcards: [],
         variables: [],
+        params: [],
         plain: new Uint8Array(text.length).fill(1),
     };
 
@@ -465,7 +516,7 @@ export function parsePrompt(input, {mode = 'prompt'} = {}) {
             while (lineStart <= text.length) {
                 let lineEnd = text.indexOf('\n', lineStart);
                 if (lineEnd === -1) lineEnd = text.length;
-                if (lineEnd > lineStart) scan(text, lineStart, lineEnd, out, {checkVariables: false});
+                if (lineEnd > lineStart) scan(text, lineStart, lineEnd, out, {checkVariables: false, wildcardFile: true});
                 lineStart = lineEnd + 1;
             }
         } else {
@@ -492,6 +543,7 @@ export function parsePrompt(input, {mode = 'prompt'} = {}) {
         blocks: out.blocks.sort(byFrom),
         wildcards: out.wildcards,
         variables: out.variables.sort(byFrom),
+        params: out.params,
         text: plainRanges,
     };
 }

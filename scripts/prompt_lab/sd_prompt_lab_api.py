@@ -655,6 +655,11 @@ def init_api(app: FastAPI):
         return db.get_settings()
 
     # Editor completion: the user's saved words first, then popular tags by prefix.
+    @app.get("/sd-prompt-lab/exists")
+    def prompt_exists(name: str = ""):
+        prompt = db.get_prompt_by_name(name.strip()) if name.strip() else None
+        return {"exists": prompt is not None, "name": prompt["name"] if prompt else ""}
+
     @app.get("/sd-prompt-lab/complete")
     def complete(q: str = Query(""), limit: int = Query(20)):
         q = q.strip()

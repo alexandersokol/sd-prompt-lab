@@ -21,7 +21,7 @@ test('valid prompts produce no diagnostics', () => {
         '__season_clothes(season=winter)__', '__a____b__', '__a__ __b__',
         '${season=!__season__} In ${season}', '${x={a|b}} ${x}', '${x?=1} ${x}', '${y:default}',
         '%{wrapper$$inner}',
-        '# a comment\na, b // trailing\n/* block | {  */ c',
+        '# a comment\na, b\n/* block | {  */ c',
         'artist \\(style\\), \\[x\\]',
         '<lora:foo_bar:0.8>, <hypernet:x:1>',
         '{dsds {asad|as}}',
@@ -166,4 +166,31 @@ test('never throws on junk', () => {
         assert.ok(parsePrompt(text));
         assert.ok(parsePrompt(text, {mode: 'wildcard-file'}));
     }
+});
+
+test('block comments and params', () => {
+    assert.deepEqual(types('a /* note */ b'), ['comment']);
+    assert.deepEqual(types('a /*@ Mood: calm */ b'), ['param', 'paramName']);
+    assert.deepEqual(parsePrompt('/*@ Prompt name: My  fav */').params.map((p) => [p.name, p.value]),
+        [['Prompt name', 'My fav']]);
+    assert.deepEqual(codes('/* # $ % { | __ */ a, /*@ Mood: {x */ b'), []);     // inert
+    assert.deepEqual(codes('a /* never closed'), ['comment-unclosed']);
+    assert.deepEqual(codes('/*@ no colon */'), ['param-invalid']);
+    assert.deepEqual(codes('/*@ Na/me: v */'), ['param-invalid']);
+    assert.deepEqual(codes('/*@ Name: */'), ['param-invalid']);
+    assert.deepEqual(codes('/*@ steps: 5 */'), ['param-reserved']);
+    assert.deepEqual(codes('/*@ Template: x */'), ['param-reserved']);
+    assert.deepEqual(codes('/*@ N: a */ /*@ N: b */'), ['param-duplicate']);
+    assert.deepEqual(codes('__dir/*__ and /* note */'), []);                    // glob is not a comment
+});
+
+test('"//" is sent to generation, so it is not a comment', () => {
+    assert.deepEqual(types('a // b'), []);
+    assert.deepEqual(types('# real comment'), ['comment']);
+});
+
+test('wildcard files: comments are not protected from Dynamic Prompts', () => {
+    const opts = {mode: 'wildcard-file'};
+    assert.deepEqual(codes('red dress /*@ Outfit: red */', opts), []);
+    assert.deepEqual(codes('red /* 50% off #1 */', opts), ['comment-unsafe']);
 });

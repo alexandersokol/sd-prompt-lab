@@ -312,6 +312,8 @@ DEFAULT_SETTINGS = {
     # False: completed tags are inserted A1111-style ("long hair", "artist \\(style\\)");
     # True: exactly as stored in the tag dataset ("long_hair", "artist_(style)").
     "tag_underscores": False,
+    # /* notes */ and /*@ Name: value */ params are handled during generation.
+    "prompt_comments": True,
 }
 
 

@@ -13,7 +13,8 @@ export function completionContext(lineBefore) {
     const text = String(lineBefore ?? '');
 
     // Never complete inside a comment.
-    if (/(^|\s)#|\/\//.test(text)) return null;
+    if (/(^|\s)#/.test(text)) return null;
+    if (text.lastIndexOf('/*') > text.lastIndexOf('*/')) return null;
 
     const lora = /<lora:([^:<>]*)$/i.exec(text);
     if (lora) return {kind: 'lora', from: text.length - lora[1].length, query: lora[1]};
@@ -32,7 +33,9 @@ export function completionContext(lineBefore) {
         return null;
     }
 
-    const segment = TAG_BREAK_RE.exec(text)[0];
+    // A tag typed right after a closed comment starts after it.
+    const commentEnd = text.lastIndexOf('*/');
+    const segment = TAG_BREAK_RE.exec(commentEnd === -1 ? text : text.slice(commentEnd + 2))[0];
     const query = segment.trimStart();
     // Weights ("0.5::"), bounds ("2$$") and bare numbers are not tags.
     if (query.length < 2 || !/^[A-Za-z0-9]/.test(query) || /^[\d.\s-]+$/.test(query) || query.includes('$')) return null;

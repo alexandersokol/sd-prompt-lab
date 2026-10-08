@@ -73,3 +73,10 @@ test('both are idempotent', () => {
         assert.equal(reformatPrompt(cleaned), cleaned, `reformat(cleanUp): ${JSON.stringify(text)}`);
     }
 });
+
+test('comments and params pass through Reformat untouched', () => {
+    const text = 'a,b ,/*@ Prompt name: x,y ,z */ c,/* note , here */d';
+    const out = reformatPrompt(text);
+    assert.ok(out.includes('/*@ Prompt name: x,y ,z */'));
+    assert.ok(out.includes('/* note , here */'));
+});

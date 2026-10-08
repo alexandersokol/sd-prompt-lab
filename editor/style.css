@@ -4,6 +4,18 @@
     font-style: italic;
 }
 
+/* A param comment: moved to the image metadata parameters. */
+:is(.cm-content, .spl-highlight) .spl-tok-param {
+    color: #8fa3bd;
+    font-style: italic;
+}
+
+:is(.cm-content, .spl-highlight) .spl-tok-paramName {
+    color: #7ee0c3;
+    font-style: normal;
+    font-weight: 600;
+}
+
 :is(.cm-content, .spl-highlight) .spl-tok-lora {
     color: lightpink;
 }

@@ -22,7 +22,6 @@ test('completionContext: tags', () => {
     assert.equal(ctx('{0.5'), null);
     assert.equal(ctx('{2$$ and'), null);
     assert.equal(ctx('cat # comm'), null);
-    assert.equal(ctx('// comm'), null);
 });
 
 test('completionContext: wildcard, variable, lora', () => {
@@ -103,4 +102,11 @@ test('highlightHtml', async () => {
     assert.equal(highlightHtml('abcdef', {limit: 3}), 'abc');
     assert.equal(highlightHtml(null), '');
     assert.ok(!highlightHtml('<script>alert(1)</script>').includes('<script'));
+});
+
+test('no completion inside a block comment', () => {
+    assert.equal(completionContext('a, /* long ha'), null);
+    assert.equal(completionContext('a, /*@ Mood: ca'), null);
+    assert.notEqual(completionContext('a, /* note */ long ha'), null);
+    assert.notEqual(completionContext('http://x, long ha'), null);     // "//" is not a comment
 });

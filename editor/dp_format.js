@@ -12,7 +12,7 @@ const REMOVABLE = new Set([
     'unmatched-paren', 'unmatched-bracket',
     'unclosed-paren', 'unclosed-bracket',
 ]);
-const PROTECTED_TOKENS = new Set(['comment', 'lora', 'wildcard', 'variableSet', 'variableUse']);
+const PROTECTED_TOKENS = new Set(['comment', 'param', 'lora', 'wildcard', 'variableSet', 'variableUse']);
 
 // Private-use characters stand in for protected regions while regexes run.
 const MASK_OPEN = '';
@@ -48,7 +48,7 @@ function mask(text) {
         let j = i;
         while (j < text.length && protect[j]) j++;
         // A comment runs to the end of its line: remember that, so duplicates logic can tell.
-        const isComment = result.tokens.some((t) => t.type === 'comment' && t.from >= i && t.to <= j);
+        const isComment = result.tokens.some((t) => (t.type === 'comment' || t.type === 'param') && t.from >= i && t.to <= j);
         parts.push({text: text.slice(i, j), isComment});
         masked += `${MASK_OPEN}${parts.length - 1}${MASK_CLOSE}`;
         i = j;

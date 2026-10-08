@@ -5,6 +5,8 @@ extension) and is only imported when a sample is requested.
 """
 from pathlib import Path
 
+from . import sd_prompt_lab_comments as comments
+
 
 class SamplerUnavailable(Exception):
     """The dynamicprompts library is not installed in this WebUI."""
@@ -24,6 +26,8 @@ def sample_prompt(prompt: str, count: int, wildcards_dir: str) -> list:
     try:
         manager = WildcardManager(Path(wildcards_dir))
         generator = RandomPromptGenerator(wildcard_manager=manager)
-        return [str(sample) for sample in generator.generate(prompt, count)]
+        # Comments are hidden from the library, as they are during generation.
+        samples = generator.generate(comments.shield(prompt), count)
+        return [comments.unshield(str(sample)) for sample in samples]
     except Exception as e:  # parse errors and missing wildcards surface as a readable message
         raise ValueError(str(e) or e.__class__.__name__) from e
